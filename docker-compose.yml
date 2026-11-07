@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:17-alpine
+    container_name: trippulse-db
+    environment:
+      POSTGRES_USER: trippulse
+      POSTGRES_PASSWORD: trippulse
+      POSTGRES_DB: trippulse
+    ports:
+      # Porta 5433 no host para não conflitar com um PostgreSQL local (5432).
+      - "5433:5432"
+    volumes:
+      - trippulse-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U trippulse"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  trippulse-db-data:

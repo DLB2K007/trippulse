@@ -1,0 +1,28 @@
+// Definição do schema do banco de dados TripPulse.
+// Fonte única de verdade para o Prisma Client e para as migrations.
+// Conexão configurada em prisma.config.ts (datasource).
+
+// Prisma 7: o client e "Rust-free" e exige um driver adapter em runtime
+// (@prisma/adapter-pg, conectado em apps/api/src/config/prisma.js).
+// O generator "prisma-client-js" gera o client consumivel nativamente pelo Node.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// Contexto de uma viagem cadastrada pelo usuário.
+// Base para o futuro monitoramento de ofertas.
+model Trip {
+  id          String   @id @default(uuid()) @db.Uuid
+  name        String
+  destination String
+  startDate   DateTime @map("start_date") @db.Date
+  endDate     DateTime @map("end_date") @db.Date
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("trips")
+}

@@ -9,17 +9,18 @@ O usuário cadastra o contexto de uma viagem e recebe atualizações periódicas
 Projeto em construção da **fundação backend** (primeira etapa). Atualmente entrega:
 
 - Servidor Node.js com API REST em [Fastify](https://fastify.dev/).
-- Endpooint de verificação de saúde `GET /health`.
+- Endpoint de verificação de saúde `GET /health`.
 - Configuração por variáveis de ambiente.
+- Banco de dados PostgreSQL em Docker com Prisma ORM e modelagem inicial de viagens.
 
-Funcionalidades futuras (banco de dados, CRUD de viagens, coleta de ofertas, agente de IA) ainda **não** estão implementadas.
+Funcionalidades futuras (CRUD de viagens, coleta de ofertas, agente de IA) ainda **não** estão implementadas.
 
 ## Stack
 
 - JavaScript com ES Modules (Node.js >= 20.6)
 - Fastify
-- PostgreSQL + Prisma (planejado para as próximas etapas)
-- Docker para ambiente local (planejado)
+- PostgreSQL (Docker) + Prisma ORM 7
+- Git e GitHub
 
 ## Estrutura
 
@@ -28,13 +29,18 @@ trippulse/
 ├── apps/
 │   └── api/
 │       └── src/
-│           ├── config/      # Configurações (variáveis de ambiente)
+│           ├── config/      # Configurações (ambiente, acesso ao banco)
 │           ├── modules/     # Módulos de negócio (etapas futuras)
 │           ├── integrations/# Provedores externos (etapas futuras)
 │           ├── shared/      # Código compartilhado (etapas futuras)
 │           ├── app.js       # Montagem da aplicação e rotas
 │           └── server.js    # Inicialização do servidor
 ├── docs/                    # Documentação do projeto
+├── prisma/
+│   ├── schema.prisma        # Modelagem do banco de dados
+│   └── migrations/          # Migrations versionadas
+├── prisma.config.ts         # Configuração do Prisma CLI (conexão)
+├── docker-compose.yml       # PostgreSQL para ambiente local
 ├── .env.example             # Modelo de variáveis de ambiente
 └── package.json
 ```
@@ -47,15 +53,29 @@ trippulse/
    npm install
    ```
 
-2. Configure as variáveis de ambiente:
+2. Suba o banco de dados PostgreSQL:
+
+   ```bash
+   docker compose up -d
+   ```
+
+   O container escuta na porta **5433** do host para não conflitar com um PostgreSQL local na 5432.
+
+3. Configure as variáveis de ambiente:
 
    ```bash
    cp .env.example .env
    ```
 
-   Edite o `.env` se necessário (padrões: `PORT=3000`, `HOST=0.0.0.0`).
+   Edite o `.env` se necessário (padrões: `PORT=3000`, `HOST=0.0.0.0`, `DATABASE_URL` apontando para `localhost:5433`).
 
-3. Inicie o servidor:
+4. Aplique as migrations do banco:
+
+   ```bash
+   npm run db:migrate
+   ```
+
+5. Inicie o servidor:
 
    ```bash
    npm run dev        # desenvolvimento, com recarga automática
@@ -63,7 +83,7 @@ trippulse/
    npm run start:no-env   # executa sem carregar o .env (usa padrões)
    ```
 
-4. Verifique a saúde da API:
+6. Verifique a saúde da API:
 
    ```bash
    curl http://localhost:3000/health

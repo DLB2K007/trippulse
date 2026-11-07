@@ -7,13 +7,19 @@
   "scripts": {
     "start": "node --env-file=.env apps/api/src/server.js",
     "dev": "node --env-file=.env --watch apps/api/src/server.js",
-    "start:no-env": "node apps/api/src/server.js"
+    "start:no-env": "node apps/api/src/server.js",
+  "db:migrate": "prisma migrate dev",
+  "db:deploy": "prisma migrate deploy"
   },
   "engines": {
     "node": ">=20.6.0"
   },
   "license": "ISC",
   "dependencies": {
-    "fastify": "^5.12.8"
+    "@prisma/adapter-pg": "^7.10.1",
+    "@prisma/client": "^7.10.1",
+    "dotenv": "^18.0.9",
+    "fastify": "^5.12.8",
+    "prisma": "^7.10.1"
   }
 }

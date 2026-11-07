@@ -13,8 +13,9 @@ Projeto em construção da **fundação backend** (primeira etapa). Atualmente e
 - Configuração por variáveis de ambiente.
 - Banco de dados PostgreSQL em Docker com Prisma ORM.
 - CRUD completo de viagens (`/trips`) com validação e tratamento de erros.
+- Pesquisa de passagens aéreas por viagem (`GET /trips/:id/flights`) com provedor **simulado**, ofertas normalizadas para o padrão interno e classificação obrigatória `SIMULATED`.
 
-Funcionalidades futuras (coleta de ofertas, agente de IA) ainda **não** estão implementadas.
+Funcionalidades futuras (histórico de preços, provedores reais, agente de IA) ainda **não** estão implementadas.
 
 ## Stack
 
@@ -31,9 +32,12 @@ trippulse/
 │   └── api/
 │       └── src/
 │           ├── config/      # Configurações (ambiente, acesso ao banco)
-│           ├── modules/     # Módulos de negócio (etapas futuras)
-│           ├── integrations/# Provedores externos (etapas futuras)
-│           ├── shared/      # Código compartilhado (etapas futuras)
+│           ├── modules/     # Módulos de negócio
+│           │   ├── trips/   # CRUD de viagens
+│           │   └── flights/ # Pesquisa de passagens de uma viagem
+│           ├── integrations/# Provedores externos
+│           │   └── flight-providers/  # registro + provedor simulado + normalização
+│           ├── shared/      # Código compartilhado
 │           ├── app.js       # Montagem da aplicação e rotas
 │           └── server.js    # Inicialização do servidor
 ├── docs/                    # Documentação do projeto
@@ -113,7 +117,37 @@ trippulse/
 | `PUT`    | `/trips/:id`    | Atualiza uma viagem inteira  | `200`   |
 | `DELETE` | `/trips/:id`    | Remove uma viagem            | `204`   |
 
-Corpo usado em `POST` e `PUT`:
+### Passagens de uma viagem — simulado (`GET /trips/:tripId/flights`)
+
+Pesquisa ofertas de passagens para a viagem informada. **Todas as ofertas são simuladas** — a resposta traz `simulated: true` no envelope e `dataClassification: "SIMULATED"` em cada oferta, em conformidade com a regra de não apresentar dados fictícios como reais.
+
+Resposta (resumida):
+
+```json
+{
+  "simulated": true,
+  "providerCount": 1,
+  "query": { "destination": "Lisboa, Portugal", "departureDate": "2027-03-10", "returnDate": "2027-03-20" },
+  "offers": [
+    {
+      "provider": "simulated-airways",
+      "isSimulated": true,
+      "dataClassification": "SIMULATED",
+      "type": "flight",
+      "route": { "origin": "GRU", "destination": "LIS" },
+      "dates": { "departureDate": "...", "arrivalDate": "..." },
+      "flight": { "airline": "...", "flightNumber": "...", "stops": 0, "cabinClass": "ECONOMY", "baggagePieces": 0, "refundable": false },
+      "price": { "currency": "BRL", "total": 0, "base": 0, "taxes": 0 }
+    }
+  ]
+}
+```
+
+Notas técnicas:
+
+- A pesquisa é **determinística**: a mesma viagem retorna sempre as mesmas ofertas (semente derivada da consulta).
+- A origem é fictícia, pois o modelo de viagem ainda não possui cidade de origem.
+- Provedores reais serão adicionados na pasta `integrations/flight-providers/` mantendo o mesmo contrato — o restante do sistema não muda.
 
 ```json
 {

@@ -1,8 +1,6 @@
 import { prisma } from '../../config/prisma.js';
 import { HttpError } from '../../shared/errors.js';
-
-const UUID_PATTERN =
-  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+import { isUuid } from '../../shared/uuid.js';
 
 function assertValidTripData({ startDate, endDate }) {
   if (new Date(endDate) < new Date(startDate)) {
@@ -45,7 +43,7 @@ export async function listTrips() {
 }
 
 function assertValidTripId(id) {
-  if (!UUID_PATTERN.test(id)) {
+  if (!isUuid(id)) {
     throw new HttpError(400, 'O identificador da viagem precisa ser um UUID válido.');
   }
 }

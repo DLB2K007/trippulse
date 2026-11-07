@@ -2,6 +2,8 @@
 // Consumido pelo módulo flights (e futuramente por hotéis/veículos/atividades).
 
 import { prisma } from '../../config/prisma.js';
+import { HttpError } from '../../shared/errors.js';
+import { isUuid } from '../../shared/uuid.js';
 
 // Identidade externa de uma oferta: mesma combinação de provedor + rota +
 // voo + partida representa o MESMO voo observado, mesmo que o preço mude.
@@ -32,6 +34,84 @@ function buildTrend(previousObservation, currentTotal) {
   return 'UNCHANGED';
 }
 
+function assertValidTripId(id) {
+  if (!isUuid(id)) {
+    throw new HttpError(400, 'O identificador da viagem precisa ser um UUID válido.');
+  }
+}
+
+// Histórico consolidado das ofertas persistidas de uma viagem.
+// Lê APENAS do banco: série completa de observações por oferta,
+// com current/previous/best/trend derivados do PriceHistory.
+export async function listOfferHistoryForTrip(tripId) {
+  assertValidTripId(tripId);
+
+  const trip = await prisma.trip.findUnique({ where: { id: tripId } });
+
+  if (!trip) {
+    throw new HttpError(404, 'Viagem não encontrada.');
+  }
+
+  const storedOffers = await prisma.flightOffer.findMany({
+    where: { tripId },
+    include: {
+      priceHistory: { orderBy: { observedAt: 'asc' } },
+    },
+    orderBy: [{ flightNumber: 'asc' }],
+  });
+
+  const offers = storedOffers.map((storedOffer) => {
+    const observations = storedOffer.priceHistory.map((observation) => ({
+      currency: observation.currency,
+      total: observation.total,
+      base: observation.base,
+      taxes: observation.taxes,
+      observedAt: observation.observedAt.toISOString(),
+    }));
+
+    const current = observations[observations.length - 1] ?? null;
+    const previous = observations.length > 1 ? observations[observations.length - 2] : null;
+    const best = observations.reduce(
+      (min, observation) => (observation.total < min.total ? observation : min),
+      observations[0] ?? null
+    );
+
+    return {
+      id: storedOffer.id,
+      provider: storedOffer.provider,
+      dataClassification: storedOffer.dataClassification,
+      type: storedOffer.type,
+      route: {
+        origin: storedOffer.origin,
+        destination: storedOffer.destination,
+      },
+      dates: {
+        departureDate: storedOffer.departureDate.toISOString(),
+        arrivalDate: storedOffer.arrivalDate.toISOString(),
+      },
+      flight: {
+        airline: storedOffer.airline,
+        flightNumber: storedOffer.flightNumber,
+        stops: storedOffer.stops,
+        cabinClass: storedOffer.cabinClass,
+        baggagePieces: storedOffer.baggagePieces,
+        refundable: storedOffer.refundable,
+      },
+      externalKey: storedOffer.externalKey,
+      observations,
+      current,
+      previous,
+      best,
+      trend: buildTrend(previous ? { total: previous.total } : null, current?.total),
+    };
+  });
+
+  return {
+    tripId,
+    offerCount: offers.length,
+    offers,
+  };
+}
 // Persiste o snapshot de uma pesquisa e calcula o comparativo de cada oferta.
 // Retorna um Map: externalKey -> { observedAt, current, previous, best, trend }.
 export async function persistOfferSnapshot(tripId, offers) {

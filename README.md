@@ -128,10 +128,50 @@ trippulse/
 | `GET`    | `/trips/:id`    | Busca uma viagem por UUID    | `200`   |
 | `PUT`    | `/trips/:id`    | Atualiza uma viagem inteira  | `200`   |
 | `DELETE` | `/trips/:id`    | Remove uma viagem            | `204`   |
+| `GET`    | `/trips/:tripId/flights` | Pesquisa voos (simulado) e persiste snapshot    | `200`   |
+| `GET`    | `/trips/:tripId/offers/history` | Histórico consolidado das ofertas observadas | `200`   |
 
-### Passagens de uma viagem — simulado (`GET /trips/:tripId/flights`)
+### Corpo de viagens (`POST` / `PUT`)
+
+```json
+{
+  "name": "Viagem Lisboa",
+  "destination": "Lisboa, Portugal",
+  "startDate": "2027-03-10",
+  "endDate": "2027-03-20"
+}
+```
+
+Erros retornados (`400`, `404`) seguem o formato padrão do Fastify, com `statusCode`, `error` e `message`. Em `POST`/`PUT` os campos mostrados são obrigatórios e `startDate` deve ser anterior ou igual a `endDate`; a forma do corpo é validada pelo JSON Schema do Fastify e as regras de negócio pelo service.
+
+Exemplos:
+
+```bash
+# cadastrar
+curl -X POST http://localhost:3000/trips -H "Content-Type: application/json" \
+  -d '{"name":"Viagem Lisboa","destination":"Lisboa, Portugal","startDate":"2027-03-10","endDate":"2027-03-20"}'
+
+# listar
+curl http://localhost:3000/trips
+
+# detalhar
+curl http://localhost:3000/trips/<id>
+
+# atualizar
+curl -X PUT http://localhost:3000/trips/<id> -H "Content-Type: application/json" \
+  -d '{"name":"Viagem Lisboa","destination":"Lisboa, Portugal","startDate":"2027-03-10","endDate":"2027-03-22"}'
+
+# remover
+curl -X DELETE http://localhost:3000/trips/<id>
+```
+
+### Pesquisa de passagens — simulado (`GET /trips/:tripId/flights`)
 
 Pesquisa ofertas de passagens para a viagem informada. **Todas as ofertas são simuladas** — a resposta traz `simulated: true` no envelope e `dataClassification: "SIMULATED"` em cada oferta, em conformidade com a regra de não apresentar dados fictícios como reais.
+
+```bash
+curl http://localhost:3000/trips/<tripId>/flights
+```
 
 Resposta (resumida):
 
@@ -166,40 +206,42 @@ Resposta (resumida):
 Notas técnicas:
 
 - A pesquisa é **simulada e determinística na identidade**: a mesma viagem referencia sempre os mesmos voos (companhias, números, rota). Os **preços variam a cada pesquisa** (semente por observação), simulando a oscilação do mercado e exercitando o histórico.
-- Cada pesquisa **persiste um snapshot**: ofertas novas (por.identity de provedor/rota/voo/partida) criam registros em `flight_offers`; toda observação cria uma linha em `price_history`.
+- Cada pesquisa **persiste um snapshot**: ofertas novas (por identidade de provedor/rota/voo/partida) criam registros em `flight_offers`; toda observação cria uma linha em `price_history`.
 - Cada oferta devolvida inclui `history` com `current`, `previous`, `best` (menor preço observado) e `trend` (`FIRST_OBSERVATION`, `DROPPED`, `ROSE` ou `UNCHANGED`).
 - A origem é fictícia, pois o modelo de viagem ainda não possui cidade de origem.
 - A exclusão de uma viagem apaga em cascata suas ofertas e observações de preço.
 - Provedores reais serão adicionados na pasta `integrations/flight-providers/` mantendo o mesmo contrato — o restante do sistema não muda.
 
+### Histórico consolidado (`GET /trips/:tripId/offers/history`)
+
+Retorna, lendo **apenas do banco**, todas as ofertas já observadas para a viagem com a série completa de observações de preço:
+
 ```json
 {
-  "name": "Viagem Lisboa",
-  "destination": "Lisboa, Portugal",
-  "startDate": "2027-03-10",
-  "endDate": "2027-03-20"
+  "tripId": "...",
+  "offerCount": 1,
+  "offers": [
+    {
+      "id": "uuid-da-oferta",
+      "provider": "simulated-airways",
+      "dataClassification": "SIMULATED",
+      "type": "flight",
+      "route": { "origin": "GRU", "destination": "LIS" },
+      "dates": { "departureDate": "...", "arrivalDate": "..." },
+      "flight": { "airline": "...", "flightNumber": "...", "stops": 0, "cabinClass": "ECONOMY", "baggagePieces": 0, "refundable": false },
+      "externalKey": "simulated-airways|GRU|LIS|...",
+      "observations": [
+        { "currency": "BRL", "total": 0, "base": 0, "taxes": 0, "observedAt": "..." }
+      ],
+      "current": { "currency": "BRL", "total": 0, "base": 0, "taxes": 0, "observedAt": "..." },
+      "previous": null,
+      "best": { "currency": "BRL", "total": 0, "base": 0, "taxes": 0, "observedAt": "..." },
+      "trend": "FIRST_OBSERVATION"
+    }
+  ]
 }
 ```
 
-Erros retornados (`400`, `404`) seguem o formato padrão do Fastify, com `statusCode`, `error` e `message`. Em `POST`/`PUT` os campos mostrados são obrigatórios e `startDate` deve ser anterior ou igual a `endDate`; a forma do corpo é validada pelo JSON Schema do Fastify e as regras de negócio pelo service.
-
-Exemplos:
-
 ```bash
-# cadastrar
-curl -X POST http://localhost:3000/trips -H "Content-Type: application/json" \
-  -d '{"name":"Viagem Lisboa","destination":"Lisboa, Portugal","startDate":"2027-03-10","endDate":"2027-03-20"}'
-
-# listar
-curl http://localhost:3000/trips
-
-# detalhar
-curl http://localhost:3000/trips/<id>
-
-# atualizar
-curl -X PUT http://localhost:3000/trips/<id> -H "Content-Type: application/json" \
-  -d '{"name":"Viagem Lisboa","destination":"Lisboa, Portugal","startDate":"2027-03-10","endDate":"2027-03-22"}'
-
-# remover
-curl -X DELETE http://localhost:3000/trips/<id>
+curl http://localhost:3000/trips/<tripId>/offers/history
 ```

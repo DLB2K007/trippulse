@@ -8,8 +8,9 @@
     "start": "node --env-file=.env apps/api/src/server.js",
     "dev": "node --env-file=.env --watch apps/api/src/server.js",
     "start:no-env": "node apps/api/src/server.js",
-  "db:migrate": "prisma migrate dev",
+  "db:migrate": "prisma migrate dev && prisma generate",
   "db:deploy": "prisma migrate deploy",
+  "postinstall": "prisma generate",
   "test": "node --env-file=.env --test --test-force-exit"
   },
   "engines": {

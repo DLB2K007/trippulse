@@ -8,7 +8,7 @@ export function buildApp() {
   app.get('/health', async () => {
     return {
       status: 'ok',
-      service: 'farehunter-api',
+      service: 'trippulse-api',
     };
   });
 

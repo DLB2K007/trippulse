@@ -1,8 +1,8 @@
-# FareHunter AI — Project Context
+# TripPulse — Project Context
 
 ## 1. Visão geral
 
-O FareHunter AI é uma plataforma inteligente de monitoramento e comparação de preços de viagens.
+O TripPulse é uma plataforma inteligente de monitoramento e comparação de preços de viagens.
 
 Seu objetivo é permitir que usuários cadastrem o contexto de uma viagem e recebam atualizações periódicas sobre oportunidades de economia envolvendo:
 
@@ -54,7 +54,7 @@ Cada funcionalidade deverá possuir responsabilidades bem definidas.
 Estrutura inicial planejada:
 
 ```text
-farehunter-ai/
+trippulse/
 ├── apps/
 │   └── api/
 │       └── src/
@@ -108,7 +108,7 @@ Resposta esperada:
 ```json
 {
   "status": "ok",
-  "service": "farehunter-api"
+  "service": "trippulse-api"
 }
 ```
 

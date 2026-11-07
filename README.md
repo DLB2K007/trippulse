@@ -1,4 +1,4 @@
-# FareHunter AI
+# TripPulse
 
 Plataforma inteligente de monitoramento e comparação de preços de viagens.
 
@@ -24,7 +24,7 @@ Funcionalidades futuras (banco de dados, CRUD de viagens, coleta de ofertas, age
 ## Estrutura
 
 ```text
-farehunter-ai/
+trippulse/
 ├── apps/
 │   └── api/
 │       └── src/
@@ -72,5 +72,5 @@ farehunter-ai/
    Resposta esperada:
 
    ```json
-   { "status": "ok", "service": "farehunter-api" }
+   { "status": "ok", "service": "trippulse-api" }
    ```

@@ -105,7 +105,7 @@ export const simulatedFlightProvider = {
           carrier_name: carrier.carrierName,
           carrier_code: carrier.carrierCode,
           flight_number: `${carrier.carrierCode}${String(Math.floor(identityRandom() * 9000) + 1000)}`,
-          depart_at: `${query.departureDate}T0${Math.floor(identityRandom() * 7) + 6}:00:00Z`,
+          depart_at: `${query.departureDate}T${String(Math.floor(identityRandom() * 7) + 6).padStart(2, '0')}:00:00Z`,
           arrive_at: addHours(`${query.departureDate}T10:00:00Z`, 8 + connectionCount * 3),
           connection_count: connectionCount,
           seat_class: cabin,

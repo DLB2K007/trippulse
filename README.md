@@ -15,6 +15,7 @@ Projeto em construção da **fundação backend** (primeira etapa). Atualmente e
 - CRUD completo de viagens (`/trips`) com validação e tratamento de erros.
 - Pesquisa de passagens aéreas por viagem (`GET /trips/:id/flights`) com provedor **simulado**, ofertas normalizadas para o padrão interno e classificação obrigatória `SIMULATED`.
 - Persistência das ofertas observadas e **histórico de preços** com comparativo (`FIRST_OBSERVATION`, `DROPPED`, `ROSE`, `UNCHANGED`) e melhor preço observado.
+- **Suíte de testes automatizados** (`npm test`, runner nativo do Node com `app.inject()`).
 
 Funcionalidades futuras (provedores reais, agente de IA, monitoramento programado) ainda **não** estão implementadas.
 
@@ -24,6 +25,15 @@ Funcionalidades futuras (provedores reais, agente de IA, monitoramento programad
 - Fastify
 - PostgreSQL (Docker) + Prisma ORM 7
 - Git e GitHub
+
+## Testes
+
+```bash
+npm test    # requer o banco ativo (docker compose up -d)
+```
+
+- Executor: `node --test` nativo (sem dependências de teste), chamadas pela Fastify `app.inject()` — não abre porta.
+- Cobertura atual: validação e regras do CRUD; normalização para o padrão canônico e a barreira anti-`REAL`; identidade/`externalKey` da oferta; snapshot do histórico (`FIRST_OBSERVATION` → `UNCHANGED`) e `best`; cascade de exclusão; regressão da validade das datas do provedor simulado.
 
 ## Estrutura
 

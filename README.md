@@ -11,9 +11,10 @@ Projeto em construção da **fundação backend** (primeira etapa). Atualmente e
 - Servidor Node.js com API REST em [Fastify](https://fastify.dev/).
 - Endpoint de verificação de saúde `GET /health`.
 - Configuração por variáveis de ambiente.
-- Banco de dados PostgreSQL em Docker com Prisma ORM e modelagem inicial de viagens.
+- Banco de dados PostgreSQL em Docker com Prisma ORM.
+- CRUD completo de viagens (`/trips`) com validação e tratamento de erros.
 
-Funcionalidades futuras (CRUD de viagens, coleta de ofertas, agente de IA) ainda **não** estão implementadas.
+Funcionalidades futuras (coleta de ofertas, agente de IA) ainda **não** estão implementadas.
 
 ## Stack
 
@@ -94,3 +95,54 @@ trippulse/
    ```json
    { "status": "ok", "service": "trippulse-api" }
    ```
+
+## Endpoints
+
+### Saúde da API
+
+- `GET /health` — verifica se a API está no ar.
+  Resposta: `{ "status": "ok", "service": "trippulse-api" }`
+
+### Viagens (`/trips`)
+
+| Método   | Rota            | Descrição                    | Sucesso |
+|----------|-----------------|------------------------------|---------|
+| `POST`   | `/trips`        | Cadastra uma viagem          | `201`   |
+| `GET`    | `/trips`        | Lista todas as viagens       | `200`   |
+| `GET`    | `/trips/:id`    | Busca uma viagem por UUID    | `200`   |
+| `PUT`    | `/trips/:id`    | Atualiza uma viagem inteira  | `200`   |
+| `DELETE` | `/trips/:id`    | Remove uma viagem            | `204`   |
+
+Corpo usado em `POST` e `PUT`:
+
+```json
+{
+  "name": "Viagem Lisboa",
+  "destination": "Lisboa, Portugal",
+  "startDate": "2027-03-10",
+  "endDate": "2027-03-20"
+}
+```
+
+Erros retornados (`400`, `404`) seguem o formato padrão do Fastify, com `statusCode`, `error` e `message`. Em `POST`/`PUT` os campos mostrados são obrigatórios e `startDate` deve ser anterior ou igual a `endDate`; a forma do corpo é validada pelo JSON Schema do Fastify e as regras de negócio pelo service.
+
+Exemplos:
+
+```bash
+# cadastrar
+curl -X POST http://localhost:3000/trips -H "Content-Type: application/json" \
+  -d '{"name":"Viagem Lisboa","destination":"Lisboa, Portugal","startDate":"2027-03-10","endDate":"2027-03-20"}'
+
+# listar
+curl http://localhost:3000/trips
+
+# detalhar
+curl http://localhost:3000/trips/<id>
+
+# atualizar
+curl -X PUT http://localhost:3000/trips/<id> -H "Content-Type: application/json" \
+  -d '{"name":"Viagem Lisboa","destination":"Lisboa, Portugal","startDate":"2027-03-10","endDate":"2027-03-22"}'
+
+# remover
+curl -X DELETE http://localhost:3000/trips/<id>
+```

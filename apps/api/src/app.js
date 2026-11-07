@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import { tripsRoutes } from './modules/trips/trips.routes.js';
 
 export function buildApp() {
   const app = Fastify({
@@ -11,6 +12,8 @@ export function buildApp() {
       service: 'trippulse-api',
     };
   });
+
+  app.register(tripsRoutes, { prefix: '/trips' });
 
   return app;
 }

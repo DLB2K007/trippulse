@@ -1,0 +1,19 @@
+{
+  "name": "farehunter-ai",
+  "version": "0.1.0",
+  "description": "Plataforma inteligente de monitoramento e comparacao de precos de viagens.",
+  "type": "module",
+  "main": "apps/api/src/server.js",
+  "scripts": {
+    "start": "node --env-file=.env apps/api/src/server.js",
+    "dev": "node --env-file=.env --watch apps/api/src/server.js",
+    "start:no-env": "node apps/api/src/server.js"
+  },
+  "engines": {
+    "node": ">=20.6.0"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "fastify": "^5.12.8"
+  }
+}

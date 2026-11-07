@@ -14,8 +14,9 @@ Projeto em construção da **fundação backend** (primeira etapa). Atualmente e
 - Banco de dados PostgreSQL em Docker com Prisma ORM.
 - CRUD completo de viagens (`/trips`) com validação e tratamento de erros.
 - Pesquisa de passagens aéreas por viagem (`GET /trips/:id/flights`) com provedor **simulado**, ofertas normalizadas para o padrão interno e classificação obrigatória `SIMULATED`.
+- Persistência das ofertas observadas e **histórico de preços** com comparativo (`FIRST_OBSERVATION`, `DROPPED`, `ROSE`, `UNCHANGED`) e melhor preço observado.
 
-Funcionalidades futuras (histórico de preços, provedores reais, agente de IA) ainda **não** estão implementadas.
+Funcionalidades futuras (provedores reais, agente de IA, monitoramento programado) ainda **não** estão implementadas.
 
 ## Stack
 
@@ -34,7 +35,8 @@ trippulse/
 │           ├── config/      # Configurações (ambiente, acesso ao banco)
 │           ├── modules/     # Módulos de negócio
 │           │   ├── trips/   # CRUD de viagens
-│           │   └── flights/ # Pesquisa de passagens de uma viagem
+│           │   ├── flights/ # Pesquisa de passagens de uma viagem
+│           │   └── offers/  # Persistência de ofertas e histórico de preços
 │           ├── integrations/# Provedores externos
 │           │   └── flight-providers/  # registro + provedor simulado + normalização
 │           ├── shared/      # Código compartilhado
@@ -126,6 +128,7 @@ Resposta (resumida):
 ```json
 {
   "simulated": true,
+  "persisted": true,
   "providerCount": 1,
   "query": { "destination": "Lisboa, Portugal", "departureDate": "2027-03-10", "returnDate": "2027-03-20" },
   "offers": [
@@ -137,7 +140,14 @@ Resposta (resumida):
       "route": { "origin": "GRU", "destination": "LIS" },
       "dates": { "departureDate": "...", "arrivalDate": "..." },
       "flight": { "airline": "...", "flightNumber": "...", "stops": 0, "cabinClass": "ECONOMY", "baggagePieces": 0, "refundable": false },
-      "price": { "currency": "BRL", "total": 0, "base": 0, "taxes": 0 }
+      "price": { "currency": "BRL", "total": 0, "base": 0, "taxes": 0 },
+      "history": {
+        "observedAt": "...",
+        "current": { "total": 0, "currency": "BRL" },
+        "previous": { "total": 0, "currency": "BRL", "observedAt": "..." },
+        "best": { "total": 0, "currency": "BRL", "observedAt": "..." },
+        "trend": "DROPPED"
+      }
     }
   ]
 }
@@ -145,8 +155,11 @@ Resposta (resumida):
 
 Notas técnicas:
 
-- A pesquisa é **determinística**: a mesma viagem retorna sempre as mesmas ofertas (semente derivada da consulta).
+- A pesquisa é **simulada e determinística na identidade**: a mesma viagem referencia sempre os mesmos voos (companhias, números, rota). Os **preços variam a cada pesquisa** (semente por observação), simulando a oscilação do mercado e exercitando o histórico.
+- Cada pesquisa **persiste um snapshot**: ofertas novas (por.identity de provedor/rota/voo/partida) criam registros em `flight_offers`; toda observação cria uma linha em `price_history`.
+- Cada oferta devolvida inclui `history` com `current`, `previous`, `best` (menor preço observado) e `trend` (`FIRST_OBSERVATION`, `DROPPED`, `ROSE` ou `UNCHANGED`).
 - A origem é fictícia, pois o modelo de viagem ainda não possui cidade de origem.
+- A exclusão de uma viagem apaga em cascata suas ofertas e observações de preço.
 - Provedores reais serão adicionados na pasta `integrations/flight-providers/` mantendo o mesmo contrato — o restante do sistema não muda.
 
 ```json

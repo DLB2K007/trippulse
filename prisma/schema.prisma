@@ -24,5 +24,53 @@ model Trip {
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
 
+  flightOffers FlightOffer[]
+
   @@map("trips")
+}
+
+// Oferta de passagem observada em uma pesquisa para uma viagem.
+// Identidade definida pela combinação de viagem + externalKey (provedor,
+// rota, voo e partida): preços mudam, a oferta observada permanece.
+model FlightOffer {
+  id                 String   @id @default(uuid()) @db.Uuid
+  tripId             String   @map("trip_id") @db.Uuid
+  provider           String
+  dataClassification String   @map("data_classification")
+  type               String
+  origin             String
+  destination        String
+  departureDate      DateTime @map("departure_date")
+  arrivalDate        DateTime @map("arrival_date")
+  airline            String
+  flightNumber       String   @map("flight_number")
+  stops              Int
+  cabinClass         String   @map("cabin_class")
+  baggagePieces      Int      @map("baggage_pieces")
+  refundable         Boolean
+  externalKey        String   @map("external_key")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  trip         Trip           @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  priceHistory PriceHistory[]
+
+  @@unique([tripId, externalKey])
+  @@map("flight_offers")
+}
+
+// Observação de preço de uma oferta em uma pesquisa (histórico).
+model PriceHistory {
+  id         String   @id @default(uuid()) @db.Uuid
+  offerId    String   @map("offer_id") @db.Uuid
+  currency   String
+  total      Float
+  base       Float
+  taxes      Float
+  observedAt DateTime @map("observed_at")
+
+  flightOffer FlightOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
+
+  @@index([offerId, observedAt])
+  @@map("price_history")
 }

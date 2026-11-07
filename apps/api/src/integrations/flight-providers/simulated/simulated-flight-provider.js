@@ -9,8 +9,9 @@
 // - Nenhum dado produzido aqui representa oferta real: o registro declara este
 //   provedor como `isSimulated: true` e o normalizador marca cada oferta como
 //   `SIMULATED` no padrão interno.
-// - Os resultados são determinísticos: a mesma consulta gera as mesmas ofertas,
-//   facilitando testes e futuras comparações de preço.
+// - A identidade dos voos (companhias, números, rota) é determinística por
+//   consulta; os preços variam através da `variationSeed` (injetada pelo
+//   orquestrador), simulando a oscilação de preços do mercado.
 
 // Hubs de origem fictícios (a viagem só possui destino no modelo atual).
 const ORIGIN_HUBS = ['GRU', 'GIG', 'CNF', 'BSB'];
@@ -67,27 +68,35 @@ export const simulatedFlightProvider = {
   name: 'simulated-airways',
   isSimulated: true,
 
-  async search(query) {
-    const seedText = JSON.stringify(query);
-    const random = createSeededRandom(seedText);
+  async search(query, options = {}) {
+    const variationSeed = options.variationSeed ?? 0;
+
+    // Identidade dos voos é determinística por consulta (rota, companhias,
+    // números de voo): a mesma pesquisa sempre referencia os mesmos voos.
+    const identityRandom = createSeededRandom(JSON.stringify(query));
+
+    // Preços derivam da consulta + semente de variação: pesquisas diferentes
+    // observam preços distintos, simulando o movimento do mercado e permitindo
+    // exercitar o histórico de preços com o provedor simulado.
+    const priceRandom = createSeededRandom(`${JSON.stringify(query)}|variation=${variationSeed}`);
 
     const destinationCode = deriveAirportCode(query.destination);
-    const originCode = query.origin ?? ORIGIN_HUBS[Math.floor(random() * ORIGIN_HUBS.length)];
+    const originCode = query.origin ?? ORIGIN_HUBS[Math.floor(identityRandom() * ORIGIN_HUBS.length)];
 
-    const offerCount = 3 + Math.floor(random() * 3); // 3 a 5 ofertas
+    const offerCount = 3 + Math.floor(identityRandom() * 3); // 3 a 5 ofertas
 
     const results = [];
 
     for (let index = 0; index < offerCount; index += 1) {
-      const carrier = CARRIERS[Math.floor(random() * CARRIERS.length)];
-      const cabin = CABINS[Math.floor(random() * CABINS.length)];
-      const connectionCount = random() > 0.7 ? 1 : 0;
+      const carrier = CARRIERS[Math.floor(identityRandom() * CARRIERS.length)];
+      const cabin = CABINS[Math.floor(identityRandom() * CABINS.length)];
+      const connectionCount = identityRandom() > 0.7 ? 1 : 0;
 
-      const fareBrl = roundToCents(700 + random() * 3200);
-      const taxBrl = roundToCents(fareBrl * (0.12 + random() * 0.2));
+      const fareBrl = roundToCents(700 + priceRandom() * 3200);
+      const taxBrl = roundToCents(fareBrl * (0.12 + priceRandom() * 0.2));
 
       results.push({
-        result_id: `SIM-${destinationCode}-${String(Math.floor(random() * 900000) + 100000)}`,
+        result_id: `SIM-${destinationCode}-${String(Math.floor(identityRandom() * 900000) + 100000)}`,
         route: {
           origin_iata: originCode,
           destination_iata: destinationCode,
@@ -95,8 +104,8 @@ export const simulatedFlightProvider = {
         outbound_leg: {
           carrier_name: carrier.carrierName,
           carrier_code: carrier.carrierCode,
-          flight_number: `${carrier.carrierCode}${String(Math.floor(random() * 9000) + 1000)}`,
-          depart_at: `${query.departureDate}T0${Math.floor(random() * 7) + 6}:00:00Z`,
+          flight_number: `${carrier.carrierCode}${String(Math.floor(identityRandom() * 9000) + 1000)}`,
+          depart_at: `${query.departureDate}T0${Math.floor(identityRandom() * 7) + 6}:00:00Z`,
           arrive_at: addHours(`${query.departureDate}T10:00:00Z`, 8 + connectionCount * 3),
           connection_count: connectionCount,
           seat_class: cabin,

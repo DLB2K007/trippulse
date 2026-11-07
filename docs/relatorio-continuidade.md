@@ -1,6 +1,6 @@
 # Relatório de continuidade — TripPulse
 
-> Atualizado em 2026-11-07, após o commit `41bf65c` (`main`, sincronizado com `origin/main`). Cobre os **Dias 1 a 7**.
+> Atualizado em 2026-11-07, após o commit `41bf65c` (`main`, sincronizado com `origin/main`). Cobre os **Dias 1 a 8**.
 > Documento de contexto oficial do projeto: **`docs/contexto.md`** (o usuário pode referir-se a ele por outros nomes, como "PROJECT_CONTEXT.md" — é sempre este arquivo).
 > Versões anteriores deste relatório cobrem o estado até o Dia 5 (commit `8a185f8`).
 
@@ -26,6 +26,8 @@ Em 7 dias incrementais, o TripPulse saiu de documento vazio para um **backend fu
 
 **Dia 7** — `prisma generate` automatizado (`postinstall` + cadeia no `db:migrate`, matando o único débito operacional recorrente) e endpoint consolidado de histórico por viagem `GET /trips/:tripId/offers/history` (`41bf65c`).
 
+**Dia 8** — Integração contínua no GitHub Actions: workflow `.github/workflows/ci.yml` que roda os 24 testes a cada push na `main` e em pull requests, com PostgreSQL 17 efêmero como serviço, migrations aplicadas via `prisma migrate deploy` e falha de teste navegando até o job (commit `0b82b45` atualizou o relatório; o workflow entra no commit do Dia 8).
+
 ---
 
 ## 2. Visão geral e estado por funcionalidade
@@ -38,6 +40,7 @@ Em 7 dias incrementais, o TripPulse saiu de documento vazio para um **backend fu
 | Pesquisa **simulada** de ofertas de voos | ✅ Implementado e testado (Dia 4) |
 | Persistência de ofertas + histórico de preços | ✅ Implementado e testado (Dias 5 e 7) |
 | Documentação e **testes automatizados** dos fluxos | ✅ Implementado e testado (Dia 6) |
+| CI no GitHub Actions (testes em push/PR) | ✅ Implementado (Dia 8) |
 | Integração **real** com provedores | ❌ Não iniciado (bloqueado por decisão de escopo do MVP) |
 | Análises de preço / agente de IA | ❌ Não iniciado |
 | Monitoramento programado, notificações | ❌ Não iniciado |
@@ -147,8 +150,9 @@ trips (Trip)
 | 5 (`8a185f8`) | `schema.prisma` (+2 models), migration 2, `modules/offers/offers.service.js`, provider (variationSeed), `flights.service.js` |
 | 6 (`ea882d3`) | `tests/{api,normalize,offers-service,simulated-provider}.test.js`, **correção de bug em** `simulated-flight-provider.js` (`depart_at` com `padStart(2,'0')`), script `test` no `package.json` |
 | 7 (`41bf65c`) | `modules/offers/{offers.routes,offers.service}.js` (endpoint history), `shared/uuid.js`, `prisma.config.ts` (tolerante), `package.json` (`postinstall`, `db:migrate` encadeado), `tests/offers-history.test.js`, refactor mínimo em `trips.service.js` |
+| 8 | `.github/workflows/ci.yml` (novo): push na `main` + PRs → `npm ci` → `prisma migrate deploy` → `npm test` com serviço `postgres:17-alpine` efêmero; README (badge + seção CI); este relatório |
 
-**Scripts npm atuais**: `start` · `dev` (`--watch`) · `start:no-env` · `db:migrate` (`migrate dev && generate`) · `db:deploy` · `postinstall` (`prisma generate`) · `test` (`node --env-file=.env --test --test-force-exit`).
+**Scripts npm atuais**: `start` · `dev` (`--watch`) · `start:no-env` · `db:migrate` (`migrate dev && generate`) · `db:deploy` (= `prisma migrate deploy`, também usado no CI) · `postinstall` (`prisma generate`) · `test` (`node --env-file=.env --test --test-force-exit`).
 
 ---
 
@@ -184,7 +188,6 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 ## 8. Pendências e riscos (estado atual)
 
 **Débitos técnicos:**
-- Sem CI no GitHub (suíte existe, nada a executa no push/PR)
 - Sem linting/formatter
 - Sem CORS/rate limit (API escuta em `0.0.0.0` no dev)
 - Credenciais triviais do banco no compose (aceitável só para dev local)
@@ -204,12 +207,11 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 
 | Ordem | Tarefa | Dependência |
 |---|---|---|
-| 1 | CI no GitHub (workflow simples: `npm ci` + `npm test` com serviço postgres, ou Docker local) | nada |
-| 2 | Análises de preço por viagem (metrics do histórico: nº observações, queda acumulada, recordes) | nada (dados prontos) |
-| 3 | Monitoramento programado (agendador que executa a pesquisa por viagem ativa) | 2 |
-| 4 | Campo de origem no Trip (migration + input + query) | nada |
-| 5 | OpenAPI/Swagger formal | qualquer momento |
-| 6 | Provedor real (remover barreira anti-`REAL` com decisão explícita) | 2–4 maduros + credenciais de provedor |
+| 1 | Análises de preço por viagem (metrics do histórico: nº observações, queda acumulada, recordes) | nada (dados prontos) |
+| 2 | Monitoramento programado (agendador que executa a pesquisa por viagem ativa) | 1 |
+| 3 | Campo de origem no Trip (migration + input + query) | nada |
+| 4 | OpenAPI/Swagger formal | qualquer momento |
+| 5 | Provedor real (remover barreira anti-`REAL` com decisão explícita) | 1–4 maduros + credenciais de provedor |
 
 ---
 
@@ -232,4 +234,4 @@ npm run dev          # servidor com recarga
 curl http://localhost:3000/health → {"status":"ok","service":"trippulse-api"}
 ```
 
-> **Snapshot atual**: 9 commits em `main`, working tree limpa, API com 7 endpoints, 3 tabelas, 24 testes automatizados, 0 bugs abertos, pró-passos claros (CI → análises → monitoramento).
+> **Snapshot atual**: API com 7 endpoints, 3 tabelas, 24 testes automatizados em CI, 0 bugs abertos, próximos passos claros (análises → monitoramento → origem no Trip).

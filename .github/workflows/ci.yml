@@ -1,0 +1,65 @@
+# Integração contínua do TripPulse.
+# Roda a suíte de testes (node --test) contra um PostgreSQL efêmero a cada
+# push na main e em pull requests direcionados à main.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Pushes consecutivos ao mesmo commit base: apenas a última execução continua.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Testes (Node 24 + PostgreSQL 17)
+    runs-on: ubuntu-latest
+
+    # URL do banco do serviço efêmero. Usa as mesmas credenciais de exemplo já
+    # commitadas no docker-compose.yml/.env.example (dev local, sem dado real).
+    env:
+      DATABASE_URL: postgresql://trippulse:trippulse@localhost:5432/trippulse?schema=public
+
+    services:
+      db:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: trippulse
+          POSTGRES_PASSWORD: trippulse
+          POSTGRES_DB: trippulse
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U trippulse -d trippulse"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      # O script `test` exige um arquivo .env (--env-file); no CI basta satisfazê-lo
+      # com os exemplos publicos, pois DATABASE_URL do ambiente assume precedência.
+      - name: Preparar .env de exemplo
+        run: cp .env.example .env
+
+      - name: Instalar dependências (com prisma generate)
+        run: npm ci
+
+      - name: Aplicar migrations no banco de teste
+        run: npx prisma migrate deploy
+
+      - name: Executar suíte de testes
+        run: npm test

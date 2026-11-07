@@ -16,6 +16,9 @@ Projeto em construção da **fundação backend** (primeira etapa). Atualmente e
 - Pesquisa de passagens aéreas por viagem (`GET /trips/:id/flights`) com provedor **simulado**, ofertas normalizadas para o padrão interno e classificação obrigatória `SIMULATED`.
 - Persistência das ofertas observadas e **histórico de preços** com comparativo (`FIRST_OBSERVATION`, `DROPPED`, `ROSE`, `UNCHANGED`) e melhor preço observado.
 - **Suíte de testes automatizados** (`npm test`, runner nativo do Node com `app.inject()`).
+- **CI no GitHub Actions**: testes rodados a cada push na `main` e em pull requests, com PostgreSQL efêmero.
+
+[![CI](https://github.com/DLB2K007/trippulse/actions/workflows/ci.yml/badge.svg)](https://github.com/DLB2K007/trippulse/actions/workflows/ci.yml)
 
 Funcionalidades futuras (provedores reais, agente de IA, monitoramento programado) ainda **não** estão implementadas.
 
@@ -34,6 +37,17 @@ npm test    # requer o banco ativo (docker compose up -d)
 
 - Executor: `node --test` nativo (sem dependências de teste), chamadas pela Fastify `app.inject()` — não abre porta.
 - Cobertura atual: validação e regras do CRUD; normalização para o padrão canônico e a barreira anti-`REAL`; identidade/`externalKey` da oferta; snapshot do histórico (`FIRST_OBSERVATION` → `UNCHANGED`) e `best`; cascade de exclusão; regressão da validade das datas do provedor simulado.
+
+## CI
+
+`.github/workflows/ci.yml` roda em cada push para `main` e em pull requests direcionados a `main`:
+
+1. Sobe um serviço efêmero `postgres:17-alpine` na rede do runner.
+2. `npm ci` (o `postinstall` executa `prisma generate`).
+3. `npx prisma migrate deploy` aplica as migrations no banco de teste.
+4. `npm test` — qualquer teste falhando interrompe o workflow (❌ falha verificável no PR).
+
+O banco de teste usa as mesmas credenciais de exemplo do desenvolvimento local (`docker-compose.yml`/`.env.example`, porta 5432 no runner) — nenhum dado real ou segredo de produção está envolvido. Falhas no job bloqueiam o merge do pull request.
 
 ## Estrutura
 

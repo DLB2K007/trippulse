@@ -58,8 +58,10 @@ jobs:
       - name: Instalar dependências (com prisma generate)
         run: npm ci
 
+      # Usa o mesmo script do fluxo local (`prisma migrate deploy`), sem
+      # duplicar o contrato de migrations dentro do workflow.
       - name: Aplicar migrations no banco de teste
-        run: npx prisma migrate deploy
+        run: npm run db:deploy
 
       - name: Executar suíte de testes
         run: npm test

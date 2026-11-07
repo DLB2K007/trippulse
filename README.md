@@ -44,10 +44,22 @@ npm test    # requer o banco ativo (docker compose up -d)
 
 1. Sobe um serviço efêmero `postgres:17-alpine` na rede do runner.
 2. `npm ci` (o `postinstall` executa `prisma generate`).
-3. `npx prisma migrate deploy` aplica as migrations no banco de teste.
+3. `npm run db:deploy` (`prisma migrate deploy`) aplica as migrations no banco de teste.
 4. `npm test` — qualquer teste falhando interrompe o workflow (❌ falha verificável no PR).
 
-O banco de teste usa as mesmas credenciais de exemplo do desenvolvimento local (`docker-compose.yml`/`.env.example`, porta 5432 no runner) — nenhum dado real ou segredo de produção está envolvido. Falhas no job bloqueiam o merge do pull request.
+O banco de teste usa as mesmas credenciais de exemplo do desenvolvimento local (`docker-compose.yml`/`.env.example`, porta 5432 no runner) — nenhum dado real ou segredo de produção está envolvido.
+
+O job aparece como check nos pull requests. Para que o merge seja **bloqueado automaticamente** quando ele falhar, o check `Testes (Node 24 + PostgreSQL 17)` precisa ser exigido em **Settings → Branches → Branch protection rules** da `main` (opção "Require status checks to pass"). Sem essa configuração, o check é executado e exibido, mas não impede o merge.
+
+## Próximos passos para publicação
+
+A API ainda não é publicada em nenhum ambiente. Antes disso:
+
+1. **Empacotamento**: criar um `Dockerfile` para a API (Node 24 + `npm ci --omit=dev`), reaproveitando o `docker-compose.yml` apenas para o banco local.
+2. **Configuração de produção**: `DATABASE_URL` apontando para um PostgreSQL gerenciado, `NODE_ENV=production`, `HOST`/`PORT` definidos pelo ambiente e segredos fora do repositório.
+3. **Migrations no deploy**: executar `npm run db:deploy` como etapa de release (nunca `migrate dev`), com backup antes de mudanças destrutivas.
+4. **Operação**: healthcheck em `/health`, logs, TLS no proxy de entrada, e CORS/rate limit — hoje ausentes (ver pendências no relatório de continuidade).
+5. **Contrato público**: publicar OpenAPI/Swagger antes de expor a API a terceiros.
 
 ## Estrutura
 

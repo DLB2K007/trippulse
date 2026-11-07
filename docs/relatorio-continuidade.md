@@ -1,6 +1,6 @@
 # Relatório de continuidade — TripPulse
 
-> Atualizado em 2026-11-07, após o commit `41bf65c` (`main`, sincronizado com `origin/main`). Cobre os **Dias 1 a 8**.
+> Atualizado em 2026-11-07, após o commit `feb9d46` (`main`, sincronizado com `origin/main`). Cobre os **Dias 1 a 8**.
 > Documento de contexto oficial do projeto: **`docs/contexto.md`** (o usuário pode referir-se a ele por outros nomes, como "PROJECT_CONTEXT.md" — é sempre este arquivo).
 > Versões anteriores deste relatório cobrem o estado até o Dia 5 (commit `8a185f8`).
 
@@ -8,7 +8,7 @@
 
 ## 1. Resumo executivo
 
-Em 7 dias incrementais, o TripPulse saiu de documento vazio para um **backend funcional ponta a ponta com suíte de testes**:
+Em 8 dias incrementais, o TripPulse saiu de documento vazio para um **backend funcional ponta a ponta com suíte de testes**:
 
 **Dia 1** — Repositório Git, Node.js com ES Modules, Fastify, variáveis de ambiente, `.gitignore`, README e `GET /health` (commit `54b380d`).
 
@@ -26,7 +26,7 @@ Em 7 dias incrementais, o TripPulse saiu de documento vazio para um **backend fu
 
 **Dia 7** — `prisma generate` automatizado (`postinstall` + cadeia no `db:migrate`, matando o único débito operacional recorrente) e endpoint consolidado de histórico por viagem `GET /trips/:tripId/offers/history` (`41bf65c`).
 
-**Dia 8** — Integração contínua no GitHub Actions: workflow `.github/workflows/ci.yml` que roda os 24 testes a cada push na `main` e em pull requests, com PostgreSQL 17 efêmero como serviço, migrations aplicadas via `prisma migrate deploy` e falha de teste navegando até o job (commit `0b82b45` atualizou o relatório; o workflow entra no commit do Dia 8).
+**Dia 8** — Integração contínua no GitHub Actions: workflow `.github/workflows/ci.yml` que roda os 24 testes a cada push na `main` e em pull requests, com PostgreSQL 17 efêmero como serviço, migrations aplicadas por `npm run db:deploy` e falha de teste derrubando o job (commit `feb9d46`; primeira execução verde: run `42419066310`). O mesmo commit corrigiu o fechamento documental: hash e contagem de testes, ressalva sobre branch protection e próximos passos de publicação.
 
 ---
 
@@ -150,7 +150,7 @@ trips (Trip)
 | 5 (`8a185f8`) | `schema.prisma` (+2 models), migration 2, `modules/offers/offers.service.js`, provider (variationSeed), `flights.service.js` |
 | 6 (`ea882d3`) | `tests/{api,normalize,offers-service,simulated-provider}.test.js`, **correção de bug em** `simulated-flight-provider.js` (`depart_at` com `padStart(2,'0')`), script `test` no `package.json` |
 | 7 (`41bf65c`) | `modules/offers/{offers.routes,offers.service}.js` (endpoint history), `shared/uuid.js`, `prisma.config.ts` (tolerante), `package.json` (`postinstall`, `db:migrate` encadeado), `tests/offers-history.test.js`, refactor mínimo em `trips.service.js` |
-| 8 | `.github/workflows/ci.yml` (novo): push na `main` + PRs → `npm ci` → `prisma migrate deploy` → `npm test` com serviço `postgres:17-alpine` efêmero; README (badge + seção CI); este relatório |
+| 8 (`feb9d46`) | `.github/workflows/ci.yml` (novo): push na `main` + PRs → `npm ci` → `npm run db:deploy` → `npm test` com serviço `postgres:17-alpine` efêmero; README (badge, seção CI, próximos passos de publicação); este relatório |
 
 **Scripts npm atuais**: `start` · `dev` (`--watch`) · `start:no-env` · `db:migrate` (`migrate dev && generate`) · `db:deploy` (= `prisma migrate deploy`, também usado no CI) · `postinstall` (`prisma generate`) · `test` (`node --env-file=.env --test --test-force-exit`).
 
@@ -162,7 +162,7 @@ trips (Trip)
 
 | Arquivo | Testes | O que protege |
 |---|---|---|
-| `tests/api.test.js` | 13 | `/health`; CRUD completo (201/400 schema/400 domínio/404/204); UUID inválido → 400; pesquisa persiste snapshot com `SIMULATED`; 2ª pesquisa compara com a anterior e dedupe de ofertas; cascade de exclusão |
+| `tests/api.test.js` | 12 | `/health`; CRUD completo (201/400 schema/400 domínio/404/204); UUID inválido → 400; pesquisa persiste snapshot com `SIMULATED`; 2ª pesquisa compara com a anterior e dedupe de ofertas; cascade de exclusão |
 | `tests/normalize.test.js` | 3 | padrão canônico completo; barreira anti-`REAL`; rejeição de oferta incompleta |
 | `tests/simulated-provider.test.js` | 3 | 3–5 ofertas; **datas ISO válidas (regressão do bug T010)**; identidade estável × preço variável por semente |
 | `tests/offers-service.test.js` | 2 | `externalKey`; snapshot: `FIRST_OBSERVATION` → `UNCHANGED`, dedupe, `best` |
@@ -189,6 +189,7 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 
 **Débitos técnicos:**
 - Sem linting/formatter
+- **Branch protection não confirmada**: o check do CI aparece no PR, mas exigir o job `Testes (Node 24 + PostgreSQL 17)` em Settings → Branches (para bloquear merge automaticamente) depende de configuração no GitHub não verificável por API sem autenticação
 - Sem CORS/rate limit (API escuta em `0.0.0.0` no dev)
 - Credenciais triviais do banco no compose (aceitável só para dev local)
 - `docker-compose` sem limites de recurso
@@ -212,6 +213,7 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 | 3 | Campo de origem no Trip (migration + input + query) | nada |
 | 4 | OpenAPI/Swagger formal | qualquer momento |
 | 5 | Provedor real (remover barreira anti-`REAL` com decisão explícita) | 1–4 maduros + credenciais de provedor |
+| 6 | Publicação da API (Dockerfile, env de produção, migrations no deploy, TLS/CORS/rate limit) | 1–5 + decisão de plataforma |
 
 ---
 

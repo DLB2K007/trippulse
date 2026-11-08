@@ -1,7 +1,7 @@
 # Relatório de continuidade — TripPulse
 
-> Atualizado em 2026-11-08, após o commit `54c1981` (`main`, sincronizado com `origin/main`) e com o **Dia 9 implementado localmente e ainda não commitado**. Cobre os **Dias 1 a 9**.
-> Em 2026-11-08 o histórico foi reescrito para corrigir a autoria: todos os 12 commits agora são `DLB2K007 <danielbordini027@gmail.com>`. Os hashes citados neste relatório já são os novos; os antigos não existem mais na `main`.
+> Atualizado em 2026-11-08, após os commits `29dca01` (métricas puras) e `8a85392` (endpoint de análise), com `main` **2 commits à frente de `origin/main`** (`54c1981`): o Dia 9 está commitado localmente e **ainda não publicado**. Cobre os **Dias 1 a 9**.
+> Em 2026-11-08 o histórico foi reescrito para corrigir a autoria: todos os 14 commits agora são `DLB2K007 <danielbordini027@gmail.com>`. Os hashes citados neste relatório já são os novos; os antigos não existem mais na `main`.
 > Documento de contexto oficial do projeto: **`docs/contexto.md`** (o usuário pode referir-se a ele por outros nomes, como "PROJECT_CONTEXT.md" — é sempre este arquivo).
 > Versões anteriores deste relatório cobrem o estado até o Dia 5 (commit `9605f03`).
 
@@ -9,7 +9,7 @@
 
 ## 1. Resumo executivo
 
-Em 8 dias incrementais, o TripPulse saiu de documento vazio para um **backend funcional ponta a ponta com suíte de testes**:
+Em 9 dias incrementais, o TripPulse saiu de documento vazio para um **backend funcional ponta a ponta com suíte de testes**:
 
 **Dia 1** — Repositório Git, Node.js com ES Modules, Fastify, variáveis de ambiente, `.gitignore`, README e `GET /health` (commit `66dc92f`).
 
@@ -29,7 +29,7 @@ Em 8 dias incrementais, o TripPulse saiu de documento vazio para um **backend fu
 
 **Dia 8** — Integração contínua no GitHub Actions: workflow `.github/workflows/ci.yml` que roda os 24 testes a cada push na `main` e em pull requests, com PostgreSQL 17 efêmero como serviço, migrations aplicadas por `npm run db:deploy` e falha de teste derrubando o job (commit `f5555e6`; primeira execução verde: run `42419066310`, anterior à reescrita de autoria). Depois da reescrita, o commit `54c1981` foi validado pela run `42517712825` (verde). O mesmo commit corrigiu o fechamento documental: hash e contagem de testes, ressalva sobre branch protection e próximos passos de publicação. O ajuste final do workflow (script `db:deploy`) está em `54c1981`.
 
-**Dia 9** — Análise de preços, em duas etapas ainda **não commitadas**:
+**Dia 9** — Análise de preços, em duas etapas commitadas localmente (`29dca01` e `8a85392`) e ainda **não publicadas**:
 
 - **Passo 1 (aprovado)**: núcleo puro `modules/analysis/price-metrics.js` — séries de preço viram centavos inteiros, mediana calculada **apenas com observações anteriores**, mínimo de 3 anteriores (4 no total) para classificar, e classificação descritiva `INSUFFICIENT_DATA` / `OPPORTUNITY` / `FAIR` / `ABOVE_HISTORY`, independente de `trend` (`DROPPED` ≠ `OPPORTUNITY`). 33 testes unitários, sem banco (o último cobre histórico suficiente sem observação atual). Inclui teto de centavos seguros, escala decimal para meio centavo e média por decomposição inteira (verificada contra oráculo `BigInt`).
 - **Passo 2**: `analysis.service.js` compõe o núcleo puro com os services existentes (`getTripById` + `listOfferHistoryForTrip`) e `analysis.routes.js` expõe `GET /trips/:tripId/analysis`, estritamente de leitura. 7 testes de integração com fixtures determinísticas.
@@ -47,7 +47,7 @@ Em 8 dias incrementais, o TripPulse saiu de documento vazio para um **backend fu
 | Persistência de ofertas + histórico de preços | ✅ Implementado e testado (Dias 5 e 7) |
 | Documentação e **testes automatizados** dos fluxos | ✅ Implementado e testado (Dia 6) |
 | CI no GitHub Actions (testes em push/PR) | ✅ Implementado (Dia 8) |
-| Análise de preços por viagem (descritiva do histórico) | ✅ Implementado e testado (Dia 9, não commitado) |
+| Análise de preços por viagem (descritiva do histórico) | ✅ Implementado e testado (Dia 9; commits `29dca01` e `8a85392`, não publicados) |
 | Integração **real** com provedores | ❌ Não iniciado (bloqueado por decisão de escopo do MVP) |
 | Agente de IA / recomendações | ❌ Não iniciado |
 | Monitoramento programado, notificações | ❌ Não iniciado |
@@ -91,7 +91,7 @@ trippulse/
 ├── docs/ (contexto.md, relatorio-continuidade.md)
 ├── prisma/ (schema.prisma + 2 migrations)
 ├── prisma.config.ts          # conexão do CLI (tolerante a .env ausente)
-├── tests/ (6 arquivos, 64 testes)
+├── tests/ (7 arquivos, 64 testes)
 ├── docker-compose.yml · .env.example · README.md · package.json
 ```
 
@@ -166,7 +166,7 @@ trips (Trip)
 | 6 (`e90a3d9`) | `tests/{api,normalize,offers-service,simulated-provider}.test.js`, **correção de bug em** `simulated-flight-provider.js` (`depart_at` com `padStart(2,'0')`), script `test` no `package.json` |
 | 7 (`c525ac9`) | `modules/offers/{offers.routes,offers.service}.js` (endpoint history), `shared/uuid.js`, `prisma.config.ts` (tolerante), `package.json` (`postinstall`, `db:migrate` encadeado), `tests/offers-history.test.js`, refactor mínimo em `trips.service.js` |
 | 8 (`f5555e6` → `54c1981`) | `.github/workflows/ci.yml` (novo): push na `main` + PRs → `npm ci` → `npm run db:deploy` → `npm test` com serviço `postgres:17-alpine` efêmero; README (badge, seção CI, próximos passos de publicação); este relatório |
-| 9 (**não commitado**) | `modules/analysis/{price-metrics,analysis.service,analysis.routes}.js` (novos), `app.js` (registro da rota), `tests/{price-metrics,analysis-endpoint}.test.js` (novos), README (endpoint e contrato), este relatório. **Sem migration e sem dependência nova.** |
+| 9 (`29dca01`, `8a85392` — locais) | `modules/analysis/{price-metrics,analysis.service,analysis.routes}.js` (novos), `app.js` (registro da rota), `tests/{price-metrics,analysis-endpoint}.test.js` (novos), README (endpoint e contrato), este relatório. **Sem migration e sem dependência nova.** |
 
 **Scripts npm atuais**: `start` · `dev` (`--watch`) · `start:no-env` · `db:migrate` (`migrate dev && generate`) · `db:deploy` (= `prisma migrate deploy`, também usado no CI) · `postinstall` (`prisma generate`) · `test` (`node --env-file=.env --test --test-force-exit`).
 
@@ -174,7 +174,7 @@ trips (Trip)
 
 ## 6. Testes
 
-**64/64 passando** (execução ~1,4s), bucket atual verificado neste dia (24 anteriores + 40 do Dia 9):
+**64/64 passando** (execução ~1,4s), bucket atual revalidado em 2026-11-08 sobre o estado commitado (24 anteriores + 40 do Dia 9):
 
 | Arquivo | Testes | O que protege |
 |---|---|---|
@@ -214,6 +214,7 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 
 **Débitos técnicos:**
 - Sem linting/formatter
+- **Dia 9 não publicado**: a `main` local está 2 commits à frente de `origin/main`; o CI ainda não executou os testes desses commits
 - **Branch protection não confirmada**: o check do CI aparece no PR, mas exigir o job `Testes (Node 24 + PostgreSQL 17)` em Settings → Branches (para bloquear merge automaticamente) depende de configuração no GitHub não verificável por API sem autenticação
 - Sem CORS/rate limit (API escuta em `0.0.0.0` no dev)
 - Credenciais triviais do banco no compose (aceitável só para dev local)
@@ -266,4 +267,4 @@ npm run dev          # servidor com recarga
 curl http://localhost:3000/health → {"status":"ok","service":"trippulse-api"}
 ```
 
-> **Snapshot atual**: API com 8 endpoints, 3 tabelas, 64 testes automatizados (40 do Dia 9 ainda **não commitados**), 0 bugs abertos, próximos passos claros (monitoramento → origem no Trip → OpenAPI).
+> **Snapshot atual**: API com 8 endpoints, 3 tabelas, 64 testes automatizados (40 do Dia 9 commitados em `29dca01`/`8a85392`, não publicados), 0 bugs abertos, próximos passos claros (monitoramento → origem no Trip → OpenAPI).

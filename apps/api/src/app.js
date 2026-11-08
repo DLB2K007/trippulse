@@ -2,6 +2,7 @@ import Fastify from 'fastify';
 import { tripsRoutes } from './modules/trips/trips.routes.js';
 import { flightRoutes } from './modules/flights/flights.routes.js';
 import { offerRoutes } from './modules/offers/offers.routes.js';
+import { analysisRoutes } from './modules/analysis/analysis.routes.js';
 
 export function buildApp() {
   const app = Fastify({
@@ -18,6 +19,7 @@ export function buildApp() {
   app.register(tripsRoutes, { prefix: '/trips' });
   app.register(flightRoutes, { prefix: '/trips' });
   app.register(offerRoutes, { prefix: '/trips' });
+  app.register(analysisRoutes, { prefix: '/trips' });
 
   return app;
 }

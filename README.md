@@ -15,6 +15,7 @@ Projeto em construção da **fundação backend** (primeira etapa). Atualmente e
 - CRUD completo de viagens (`/trips`) com validação e tratamento de erros.
 - Pesquisa de passagens aéreas por viagem (`GET /trips/:id/flights`) com provedor **simulado**, ofertas normalizadas para o padrão interno e classificação obrigatória `SIMULATED`.
 - Persistência das ofertas observadas e **histórico de preços** com comparativo (`FIRST_OBSERVATION`, `DROPPED`, `ROSE`, `UNCHANGED`) e melhor preço observado.
+- **Análise de preços por viagem** (`GET /trips/:tripId/analysis`), descritiva do histórico de cada oferta: `INSUFFICIENT_DATA`, `OPPORTUNITY`, `FAIR` e `ABOVE_HISTORY`, com critérios e limitações explícitos.
 - **Suíte de testes automatizados** (`npm test`, runner nativo do Node com `app.inject()`).
 - **CI no GitHub Actions**: testes rodados a cada push na `main` e em pull requests, com PostgreSQL efêmero.
 
@@ -36,7 +37,7 @@ npm test    # requer o banco ativo (docker compose up -d)
 ```
 
 - Executor: `node --test` nativo (sem dependências de teste), chamadas pela Fastify `app.inject()` — não abre porta.
-- Cobertura atual: validação e regras do CRUD; normalização para o padrão canônico e a barreira anti-`REAL`; identidade/`externalKey` da oferta; snapshot do histórico (`FIRST_OBSERVATION` → `UNCHANGED`) e `best`; cascade de exclusão; regressão da validade das datas do provedor simulado.
+- Cobertura atual: validação e regras do CRUD; normalização para o padrão canônico e a barreira anti-`REAL`; identidade/`externalKey` da oferta; snapshot do histórico (`FIRST_OBSERVATION` → `UNCHANGED`) e `best`; cascade de exclusão; regressão da validade das datas do provedor simulado; métricas puras de preço (limiares, mediana sem o preço atual, arredondamento, limites numéricos); endpoint de análise (`404`/`400`, viagem sem ofertas, classificações, dados simulados, repetibilidade).
 
 ## CI
 
@@ -72,7 +73,8 @@ trippulse/
 │           ├── modules/     # Módulos de negócio
 │           │   ├── trips/   # CRUD de viagens
 │           │   ├── flights/ # Pesquisa de passagens de uma viagem
-│           │   └── offers/  # Persistência de ofertas e histórico de preços
+│           │   ├── offers/  # Persistência de ofertas e histórico de preços
+│           │   └── analysis/ # Métricas puras + análise consolidada por viagem
 │           ├── integrations/# Provedores externos
 │           │   └── flight-providers/  # registro + provedor simulado + normalização
 │           ├── shared/      # Código compartilhado
@@ -156,6 +158,7 @@ trippulse/
 | `DELETE` | `/trips/:id`    | Remove uma viagem            | `204`   |
 | `GET`    | `/trips/:tripId/flights` | Pesquisa voos (simulado) e persiste snapshot    | `200`   |
 | `GET`    | `/trips/:tripId/offers/history` | Histórico consolidado das ofertas observadas | `200`   |
+| `GET`    | `/trips/:tripId/analysis` | Análise de preços por viagem (somente leitura)  | `200`   |
 
 ### Corpo de viagens (`POST` / `PUT`)
 
@@ -271,3 +274,101 @@ Retorna, lendo **apenas do banco**, todas as ofertas já observadas para a viage
 ```bash
 curl http://localhost:3000/trips/<tripId>/offers/history
 ```
+
+### Análise de preços (`GET /trips/:tripId/analysis`)
+
+Analisa, **somente lendo do banco**, a série de preços de cada oferta já observada na viagem. O endpoint não cria observações, não consulta provedores e não aceita parâmetros (`?qualquer=coisa` responde `400`). Os critérios aplicados são devolvidos em `criteria`.
+
+```bash
+curl http://localhost:3000/trips/<tripId>/analysis
+```
+
+Resposta (exemplo ilustrativo; valores de uma oferta com 4 observações):
+
+```json
+{
+  "trip": { "id": "...", "name": "Viagem Lisboa", "destination": "Lisboa, Portugal", "startDate": "2027-03-10", "endDate": "2027-03-20" },
+  "summary": {
+    "offerCount": 1,
+    "classifiedOfferCount": 1,
+    "classificationCounts": { "INSUFFICIENT_DATA": 0, "OPPORTUNITY": 1, "FAIR": 0, "ABOVE_HISTORY": 0 },
+    "currencies": ["BRL"],
+    "mixedCurrencyOfferCount": 0
+  },
+  "dataQuality": {
+    "observationCount": 4,
+    "invalidObservationCount": 0,
+    "simulatedOfferCount": 1,
+    "realOfferCount": 0,
+    "unclassifiedOfferCount": 0,
+    "containsSimulatedData": true,
+    "offersWithEnoughHistory": 1,
+    "offersWithoutEnoughHistory": 0
+  },
+  "criteria": { "minPreviousObservations": 3, "opportunityDropPct": 10, "aboveHistoryPct": 10 },
+  "offers": [
+    {
+      "offerId": "uuid-da-oferta",
+      "provider": "simulated-airways",
+      "dataClassification": "SIMULATED",
+      "simulated": true,
+      "type": "flight",
+      "route": { "origin": "GRU", "destination": "LIS" },
+      "dates": { "departureDate": "...", "arrivalDate": "..." },
+      "flight": { "airline": "...", "flightNumber": "...", "stops": 0, "cabinClass": "ECONOMY", "baggagePieces": 0, "refundable": false },
+      "externalKey": "simulated-airways|GRU|LIS|...",
+      "analysis": {
+        "observationCount": 4,
+        "invalidObservationCount": 0,
+        "currency": "BRL",
+        "mixedCurrency": false,
+        "current": { "total": 1200, "currency": "BRL", "observedAt": "..." },
+        "previous": { "total": 1300, "currency": "BRL", "observedAt": "..." },
+        "historicalMedian": { "total": 1400, "currency": "BRL", "sampleSize": 3 },
+        "historical": { "sampleSize": 3, "mean": { "total": 1400, "currency": "BRL" } },
+        "variationVsPreviousPct": -7.69,
+        "variationVsMedianPct": -14.29,
+        "trend": "DROPPED",
+        "classification": "OPPORTUNITY",
+        "classificationReason": null,
+        "criteria": { "minPreviousObservations": 3, "opportunityDropPct": 10, "aboveHistoryPct": 10 }
+      },
+      "explanation": {
+        "reason": "BELOW_MEDIAN_BY_THRESHOLD",
+        "reference": { "type": "HISTORICAL_MEDIAN", "total": 1400, "currency": "BRL", "sampleSize": 3 },
+        "thresholds": { "minPreviousObservations": 3, "opportunityDropPct": 10, "aboveHistoryPct": 10 }
+      }
+    }
+  ],
+  "limitations": ["...", "..."]
+}
+```
+
+Leitura do resultado:
+
+- `INSUFFICIENT_DATA` — não há preço atual, há menos de 3 observações anteriores, a série mistura moedas ou não há mediana de referência. O motivo exato vem em `classificationReason`.
+- `OPPORTUNITY` — preço atual pelo menos 10% **abaixo** da mediana apenas das observações anteriores.
+- `FAIR` — dentro do intervalo entre esses limiares.
+- `ABOVE_HISTORY` — preço atual pelo menos 10% **acima** da mediana histórica.
+- `trend` é independente da classificação: um preço pode `DROPPED` e continuar `ABOVE_HISTORY`.
+- A análise é **descritiva do histórico da própria oferta**, não do mercado, e **não é recomendação de compra**.
+- Ofertas `SIMULATED` trazem `simulated: true` e são contabilizadas em `dataQuality`; seus preços não representam ofertas reais. A contagem é **estrita pelo valor armazenado**: qualquer classificação que não seja `SIMULATED` nem `REAL` cai em `unclassifiedOfferCount`, nunca em `realOfferCount`.
+- A resposta é repetível para o mesmo estado do banco (sem carimbo de tempo) e a ordem das ofertas é determinística.
+
+Indicadores do envelope:
+
+| Campo | Significado |
+|---|---|
+| `summary.offerCount` | Ofertas observadas na viagem. |
+| `summary.classifiedOfferCount` | Ofertas que receberam `OPPORTUNITY`, `FAIR` ou `ABOVE_HISTORY`. |
+| `summary.classificationCounts` | Quantas ofertas em cada rótulo (a soma é `offerCount`). |
+| `summary.currencies` | Moedas das séries comparáveis. |
+| `summary.mixedCurrencyOfferCount` | Séries com mais de uma moeda, que não são comparadas. |
+| `dataQuality.observationCount` | Observações **válidas** somadas, incluindo a atual de cada oferta. |
+| `dataQuality.invalidObservationCount` | Observações descartadas (total inválido, moeda vazia, data inválida, teto de centavos). |
+| `dataQuality.simulatedOfferCount` / `realOfferCount` / `unclassifiedOfferCount` | Contagem **estrita** pela classificação armazenada (`SIMULATED` / `REAL` / outra). |
+| `dataQuality.containsSimulatedData` | Existe pelo menos uma oferta `SIMULATED`. |
+| `dataQuality.offersWithEnoughHistory` | Ofertas com histórico anterior suficiente para tentar classificar (`analysis.historical.sampleSize >= minPreviousObservations`). |
+| `dataQuality.offersWithoutEnoughHistory` | As demais. |
+
+**Amostra e resultado são eixos diferentes.** `offersWithEnoughHistory` mede se a oferta tinha observações anteriores suficientes para *tentar* classificar; `classifiedOfferCount` mede quantas foram classificadas de fato. Uma oferta com amostra suficiente mas moeda mista continua `INSUFFICIENT_DATA`, então `classifiedOfferCount` pode ser menor que `offersWithEnoughHistory` — isso é esperado, não inconsistência.

@@ -1,8 +1,9 @@
 # Relatório de continuidade — TripPulse
 
-> Atualizado em 2026-11-07, após o commit `feb9d46` (`main`, sincronizado com `origin/main`). Cobre os **Dias 1 a 8**.
+> Atualizado em 2026-11-08, após o commit `54c1981` (`main`, sincronizado com `origin/main`) e com o **Dia 9 implementado localmente e ainda não commitado**. Cobre os **Dias 1 a 9**.
+> Em 2026-11-08 o histórico foi reescrito para corrigir a autoria: todos os 12 commits agora são `DLB2K007 <danielbordini027@gmail.com>`. Os hashes citados neste relatório já são os novos; os antigos não existem mais na `main`.
 > Documento de contexto oficial do projeto: **`docs/contexto.md`** (o usuário pode referir-se a ele por outros nomes, como "PROJECT_CONTEXT.md" — é sempre este arquivo).
-> Versões anteriores deste relatório cobrem o estado até o Dia 5 (commit `8a185f8`).
+> Versões anteriores deste relatório cobrem o estado até o Dia 5 (commit `9605f03`).
 
 ---
 
@@ -10,23 +11,28 @@
 
 Em 8 dias incrementais, o TripPulse saiu de documento vazio para um **backend funcional ponta a ponta com suíte de testes**:
 
-**Dia 1** — Repositório Git, Node.js com ES Modules, Fastify, variáveis de ambiente, `.gitignore`, README e `GET /health` (commit `54b380d`).
+**Dia 1** — Repositório Git, Node.js com ES Modules, Fastify, variáveis de ambiente, `.gitignore`, README e `GET /health` (commit `66dc92f`).
 
-**Dia 2** — PostgreSQL 17 em Docker (porta **5433**, por causa de um PostgreSQL nativo do Windows na 5432), Prisma ORM 7.10.1 com `prisma.config.ts` + driver adapter `@prisma/adapter-pg`, modelagem do `Trip` e primeira migration (`018f428`).
+**Dia 2** — PostgreSQL 17 em Docker (porta **5433**, por causa de um PostgreSQL nativo do Windows na 5432), Prisma ORM 7.10.1 com `prisma.config.ts` + driver adapter `@prisma/adapter-pg`, modelagem do `Trip` e primeira migration (`e926668`).
 
-**Renomeação** — FareHunter AI → **TripPulse** em todo o doc, código, `/health` e README (`c9ad714`).
+**Renomeação** — FareHunter AI → **TripPulse** em todo o doc, código, `/health` e README (`ab6cd3a`).
 
-**Dia 3** — CRUD completo de viagens com separação rígida: formato validado no JSON Schema das rotas, regras de negócio no service (`2fc1563`).
+**Dia 3** — CRUD completo de viagens com separação rígida: formato validado no JSON Schema das rotas, regras de negócio no service (`a451867`).
 
-**Dia 4** — Integração **simulada** de provedores de passagens: registro de provedores como "costura" para provedores reais, provedor simulado com dados brutos estilo API externa, normalizador para o padrão canônico e garantia de `SIMULATED` **imposta por construção** (`a3af6ce`).
+**Dia 4** — Integração **simulada** de provedores de passagens: registro de provedores como "costura" para provedores reais, provedor simulado com dados brutos estilo API externa, normalizador para o padrão canônico e garantia de `SIMULATED` **imposta por construção** (`162258a`).
 
-**Dia 5** — Persistência: models `FlightOffer` + `PriceHistory`, snapshot de preço a cada pesquisa, identidade por `externalKey` e histórico com tendências (`FIRST_OBSERVATION` / `DROPPED` / `ROSE` / `UNCHANGED`) e `best` (`8a185f8`).
+**Dia 5** — Persistência: models `FlightOffer` + `PriceHistory`, snapshot de preço a cada pesquisa, identidade por `externalKey` e histórico com tendências (`FIRST_OBSERVATION` / `DROPPED` / `ROSE` / `UNCHANGED`) e `best` (`9605f03`).
 
-**Dia 6** — Suíte de testes automatizados construída com `node --test` + `app.inject()` — e os testes **encontraram um bug real** (`Invalid Date` em ~1/3 das ofertas do simulador), corrigido com teste de regressão (`ea882d3`).
+**Dia 6** — Suíte de testes automatizados construída com `node --test` + `app.inject()` — e os testes **encontraram um bug real** (`Invalid Date` em ~1/3 das ofertas do simulador), corrigido com teste de regressão (`e90a3d9`).
 
-**Dia 7** — `prisma generate` automatizado (`postinstall` + cadeia no `db:migrate`, matando o único débito operacional recorrente) e endpoint consolidado de histórico por viagem `GET /trips/:tripId/offers/history` (`41bf65c`).
+**Dia 7** — `prisma generate` automatizado (`postinstall` + cadeia no `db:migrate`, matando o único débito operacional recorrente) e endpoint consolidado de histórico por viagem `GET /trips/:tripId/offers/history` (`c525ac9`).
 
-**Dia 8** — Integração contínua no GitHub Actions: workflow `.github/workflows/ci.yml` que roda os 24 testes a cada push na `main` e em pull requests, com PostgreSQL 17 efêmero como serviço, migrations aplicadas por `npm run db:deploy` e falha de teste derrubando o job (commit `feb9d46`; primeira execução verde: run `42419066310`). O mesmo commit corrigiu o fechamento documental: hash e contagem de testes, ressalva sobre branch protection e próximos passos de publicação.
+**Dia 8** — Integração contínua no GitHub Actions: workflow `.github/workflows/ci.yml` que roda os 24 testes a cada push na `main` e em pull requests, com PostgreSQL 17 efêmero como serviço, migrations aplicadas por `npm run db:deploy` e falha de teste derrubando o job (commit `f5555e6`; primeira execução verde: run `42419066310`, anterior à reescrita de autoria). Depois da reescrita, o commit `54c1981` foi validado pela run `42517712825` (verde). O mesmo commit corrigiu o fechamento documental: hash e contagem de testes, ressalva sobre branch protection e próximos passos de publicação. O ajuste final do workflow (script `db:deploy`) está em `54c1981`.
+
+**Dia 9** — Análise de preços, em duas etapas ainda **não commitadas**:
+
+- **Passo 1 (aprovado)**: núcleo puro `modules/analysis/price-metrics.js` — séries de preço viram centavos inteiros, mediana calculada **apenas com observações anteriores**, mínimo de 3 anteriores (4 no total) para classificar, e classificação descritiva `INSUFFICIENT_DATA` / `OPPORTUNITY` / `FAIR` / `ABOVE_HISTORY`, independente de `trend` (`DROPPED` ≠ `OPPORTUNITY`). 33 testes unitários, sem banco (o último cobre histórico suficiente sem observação atual). Inclui teto de centavos seguros, escala decimal para meio centavo e média por decomposição inteira (verificada contra oráculo `BigInt`).
+- **Passo 2**: `analysis.service.js` compõe o núcleo puro com os services existentes (`getTripById` + `listOfferHistoryForTrip`) e `analysis.routes.js` expõe `GET /trips/:tripId/analysis`, estritamente de leitura. 7 testes de integração com fixtures determinísticas.
 
 ---
 
@@ -41,8 +47,9 @@ Em 8 dias incrementais, o TripPulse saiu de documento vazio para um **backend fu
 | Persistência de ofertas + histórico de preços | ✅ Implementado e testado (Dias 5 e 7) |
 | Documentação e **testes automatizados** dos fluxos | ✅ Implementado e testado (Dia 6) |
 | CI no GitHub Actions (testes em push/PR) | ✅ Implementado (Dia 8) |
+| Análise de preços por viagem (descritiva do histórico) | ✅ Implementado e testado (Dia 9, não commitado) |
 | Integração **real** com provedores | ❌ Não iniciado (bloqueado por decisão de escopo do MVP) |
-| Análises de preço / agente de IA | ❌ Não iniciado |
+| Agente de IA / recomendações | ❌ Não iniciado |
 | Monitoramento programado, notificações | ❌ Não iniciado |
 | Hotéis, veículos, atividades; publicação | ❌ Não iniciado |
 
@@ -69,7 +76,8 @@ trippulse/
 │   ├── modules/
 │   │   ├── trips/            # CRUD de viagens
 │   │   ├── flights/          # orquestra pesquisa → normalização → snapshot
-│   │   └── offers/           # domínio de ofertas: identidade, snapshot, histórico
+│   │   ├── offers/           # domínio de ofertas: identidade, snapshot, histórico
+│   │   └── analysis/         # price-metrics.js (puro) + service/rota de análise
 │   ├── integrations/
 │   │   └── flight-providers/
 │   │       ├── index.js      # registro de provedores (único ponto de extensão)
@@ -83,7 +91,7 @@ trippulse/
 ├── docs/ (contexto.md, relatorio-continuidade.md)
 ├── prisma/ (schema.prisma + 2 migrations)
 ├── prisma.config.ts          # conexão do CLI (tolerante a .env ausente)
-├── tests/ (4 arquivos, 24 testes)
+├── tests/ (6 arquivos, 64 testes)
 ├── docker-compose.yml · .env.example · README.md · package.json
 ```
 
@@ -96,6 +104,7 @@ trippulse/
 | `PUT` / `DELETE` | `/trips/:id` | 200/400/404 · 204 | trips.routes |
 | `GET` | `/trips/:tripId/flights` | 200/404 | flights.routes (escreve snapshot) |
 | `GET` | `/trips/:tripId/offers/history` | 200/400/404 | offers.routes (só leitura) |
+| `GET` | `/trips/:tripId/analysis` | 200/400/404 | analysis.routes (só leitura) |
 
 ### Fluxo principal
 
@@ -113,6 +122,12 @@ GET /trips/:tripId/flights
 
 GET /trips/:tripId/offers/history
   → leitura EXCLUSIVA do banco: série completa + current/previous/best/trend
+
+GET /trips/:tripId/analysis
+  → trips.getTripById (400/404) + offers.listOfferHistoryForTrip (leitura)
+  → analyzePriceSeries por oferta (núcleo puro, sem I/O)
+  → resumo + qualidade dos dados + explicação por oferta + limitações
+  → nenhuma escrita, nenhum carimbo de tempo: mesma resposta para o mesmo estado
 ```
 
 **Padrão canônico de oferta** (definido em `normalize.js`): `{ provider, isSimulated, dataClassification, type, route, dates, flight, price, relatedQuery }` + `history: { observedAt, current, previous, best, trend }`.
@@ -142,15 +157,16 @@ trips (Trip)
 
 | Dia (commit) | Principais arquivos |
 |---|---|
-| 1 (`54b380d`) | `package.json`, `apps/api/src/{app,server}.js`, `config/env.js`, `.gitignore`, `.env.example`, README |
-| 2 (`018f428`) | `docker-compose.yml`, `prisma/schema.prisma`, `prisma.config.ts`, `config/prisma.js`, migration init, `.env`/`.env.example` (DATABASE_URL) |
-| ren (`c9ad714`) | renomeação FareHunter→TripPulse em `app.js`, `package.json`, README, doc, `.env.example` |
-| 3 (`2fc1563`) | `modules/trips/{trips.service,trips.routes}.js`, `shared/errors.js`, `app.js` (registro) |
-| 4 (`a3af6ce`) | `integrations/flight-providers/{index,normalize,simulated/simulated-flight-provider}.js`, `modules/flights/{flights.service,flights.routes}.js`, `app.js` |
-| 5 (`8a185f8`) | `schema.prisma` (+2 models), migration 2, `modules/offers/offers.service.js`, provider (variationSeed), `flights.service.js` |
-| 6 (`ea882d3`) | `tests/{api,normalize,offers-service,simulated-provider}.test.js`, **correção de bug em** `simulated-flight-provider.js` (`depart_at` com `padStart(2,'0')`), script `test` no `package.json` |
-| 7 (`41bf65c`) | `modules/offers/{offers.routes,offers.service}.js` (endpoint history), `shared/uuid.js`, `prisma.config.ts` (tolerante), `package.json` (`postinstall`, `db:migrate` encadeado), `tests/offers-history.test.js`, refactor mínimo em `trips.service.js` |
-| 8 (`feb9d46`) | `.github/workflows/ci.yml` (novo): push na `main` + PRs → `npm ci` → `npm run db:deploy` → `npm test` com serviço `postgres:17-alpine` efêmero; README (badge, seção CI, próximos passos de publicação); este relatório |
+| 1 (`66dc92f`) | `package.json`, `apps/api/src/{app,server}.js`, `config/env.js`, `.gitignore`, `.env.example`, README |
+| 2 (`e926668`) | `docker-compose.yml`, `prisma/schema.prisma`, `prisma.config.ts`, `config/prisma.js`, migration init, `.env`/`.env.example` (DATABASE_URL) |
+| ren (`ab6cd3a`) | renomeação FareHunter→TripPulse em `app.js`, `package.json`, README, doc, `.env.example` |
+| 3 (`a451867`) | `modules/trips/{trips.service,trips.routes}.js`, `shared/errors.js`, `app.js` (registro) |
+| 4 (`162258a`) | `integrations/flight-providers/{index,normalize,simulated/simulated-flight-provider}.js`, `modules/flights/{flights.service,flights.routes}.js`, `app.js` |
+| 5 (`9605f03`) | `schema.prisma` (+2 models), migration 2, `modules/offers/offers.service.js`, provider (variationSeed), `flights.service.js` |
+| 6 (`e90a3d9`) | `tests/{api,normalize,offers-service,simulated-provider}.test.js`, **correção de bug em** `simulated-flight-provider.js` (`depart_at` com `padStart(2,'0')`), script `test` no `package.json` |
+| 7 (`c525ac9`) | `modules/offers/{offers.routes,offers.service}.js` (endpoint history), `shared/uuid.js`, `prisma.config.ts` (tolerante), `package.json` (`postinstall`, `db:migrate` encadeado), `tests/offers-history.test.js`, refactor mínimo em `trips.service.js` |
+| 8 (`f5555e6` → `54c1981`) | `.github/workflows/ci.yml` (novo): push na `main` + PRs → `npm ci` → `npm run db:deploy` → `npm test` com serviço `postgres:17-alpine` efêmero; README (badge, seção CI, próximos passos de publicação); este relatório |
+| 9 (**não commitado**) | `modules/analysis/{price-metrics,analysis.service,analysis.routes}.js` (novos), `app.js` (registro da rota), `tests/{price-metrics,analysis-endpoint}.test.js` (novos), README (endpoint e contrato), este relatório. **Sem migration e sem dependência nova.** |
 
 **Scripts npm atuais**: `start` · `dev` (`--watch`) · `start:no-env` · `db:migrate` (`migrate dev && generate`) · `db:deploy` (= `prisma migrate deploy`, também usado no CI) · `postinstall` (`prisma generate`) · `test` (`node --env-file=.env --test --test-force-exit`).
 
@@ -158,7 +174,7 @@ trips (Trip)
 
 ## 6. Testes
 
-**24/24 passando** (execução ~0,9s), bucket atual verificado neste dia:
+**64/64 passando** (execução ~1,4s), bucket atual verificado neste dia (24 anteriores + 40 do Dia 9):
 
 | Arquivo | Testes | O que protege |
 |---|---|---|
@@ -167,6 +183,8 @@ trips (Trip)
 | `tests/simulated-provider.test.js` | 3 | 3–5 ofertas; **datas ISO válidas (regressão do bug T010)**; identidade estável × preço variável por semente |
 | `tests/offers-service.test.js` | 2 | `externalKey`; snapshot: `FIRST_OBSERVATION` → `UNCHANGED`, dedupe, `best` |
 | `tests/offers-history.test.js` | 4 | endpoint de histórico: 404/400; vazio pré-pesquisa; consolidação após 2 pesquisas; cascade |
+| `tests/price-metrics.test.js` | 33 | núcleo puro: limiares (10%/-10 e 9,99%), mediana sem o preço atual, `DROPPED`≠`OPPORTUNITY`, `ROSE`≠`ABOVE_HISTORY`, moeda mista, observações inválidas, ordenação/imutabilidade, centavos e meio centavo, teto de inteiro seguro, média de somas grandes, validação de `options`, empates de `observedAt` |
+| `tests/analysis-endpoint.test.js` | 7 | endpoint de análise com **fixtures determinísticas**: 400/404 e rejeição de querystring; viagem sem ofertas; histórico insuficiente (inclui oferta sem histórico e observação inválida); as três classificações; identificação de dados simulados × reais; moeda mista; repetibilidade + ausência de escrita + contrato de `/offers/history` preservado |
 
 Histórico dos testes manuais (Dias 1–5) está documentado como superseded pela suíte. Falhas encontradas durante o desenvolvimento foram todas corrigidas e viraram regressões quando aplicável.
 
@@ -182,6 +200,13 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 6. **Registro de provedores** como único ponto de extensão; `SIMULATED` classificada pelo registro (não pelos dados do provedor) + **barreira anti-`REAL`** no normalizador
 7. **Identidade de oferta por `externalKey`** (provedor|rota|companhia|voo|partida) — permite preço variável ($variationSeed) com identidade estável, viabilizando tendências reais
 8. **Archivo do histórico escreve+compara (`/flights`) sempre a partir de observações reais**; o endpoint novo (`/offers/history`) é leitura pura
+9. **Núcleo de análise puro** (`price-metrics.js`): sem Prisma, sem relógio, sem I/O — testável com fixtures e sem `DATABASE_URL`. O `buildTrend` foi replicado de `offers.service` de propósito; importar o service traria o Prisma para o módulo puro
+10. **Dinheiro em centavos inteiros** e um único ponto de arredondamento na saída; a classificação compara o percentual **já arredondado** a 2 casas, para o consumidor conferir na mão. Mediana de referência usa **só observações anteriores**, mínimo de 3 anteriores, e `trend` é independente de `classification`
+11. **Análise é composição, não reimplementação**: `analysis.service` chama `getTripById` (400/404) e `listOfferHistoryForTrip` (série completa) e passa cada série pelo núcleo puro. Nenhuma consulta SQL nova, nenhuma escrita, nenhum `generatedAt` — a resposta é repetível e o teste compara duas chamadas. `dataQuality` conta `SIMULATED`, `REAL` e desconhecidas de forma **estrita pelo valor armazenado**: nada é inferido do preço e classificação desconhecida nunca é contada como real
+12. **Ordem determinística das ofertas** por `externalKey` (único por viagem) + `id`, porque o service existente ordena só por `flightNumber`, que pode empatar entre provedores
+13. **Sem prefixo `/api`**: o endpoint foi montado como `/trips/:tripId/analysis` porque **todas** as rotas do projeto já vivem em `/trips` (o prefixo `/api` não existe em `app.js`). Mudar o prefixo alteraria endpoints já concluídos e não foi feito
+14. **Rota validada por uma única configuração de schema** (`params` + `querystring`): o endpoint não tem parâmetros e usa `maxProperties: 0` para recusar qualquer querystring com 400. `additionalProperties: false` não serve aqui porque o Ajv do Fastify roda com `removeAdditional: true` e **removeria** a chave em silêncio
+15. **Indicadores de amostra e de resultado são eixos distintos**: `dataQuality.offersWithEnoughHistory` mede tamanho de série (≥ `minPreviousObservations` anteriores) e `summary.classifiedOfferCount` mede veredito. Uma oferta com amostra suficiente continua `INSUFFICIENT_DATA` se a moeda for mista, então os números podem divergir sem inconsistência
 
 ---
 
@@ -196,9 +221,15 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 
 **Funcionalidades incompletas (planejadas, não implementadas):**
 - Campo de **origem** no Trip (pesquisa usa origem fictícia do simulador)
-- Análises de preço ("recorde", "queda acumulada") — dados já existem no histórico
+- Análise limitada a uma oferta por vez, sem comparação entre ofertas/provedores, sem recorde/queda acumulada e sem janela temporal
 - Monitoramento programado (execução periódica das pesquisas por viagem)
 - Agente de IA, notificações, hotéis/veículos/atividades, provedores reais, publicação
+
+**Limitações conhecidas da análise (documentadas na resposta):**
+- `PriceHistory` não tem `createdAt` nem sequência: empates de `observedAt` não têm desempate cronológico real (a ordem de entrada decide)
+- Série com moedas misturadas não é comparada: fica `INSUFFICIENT_DATA` + `MIXED_CURRENCY`
+- Com 3 observações anteriores a mediana é um dos próprios valores; não há intervalo de confiança
+- Preços do provedor simulado são independentes entre si: nenhum limiar pode ser calibrado com eles (a classificação é validada por fixtures)
 
 **Bugs conhecidos:** nenhum aberto. O único bug real já registrado (datas `Invalid` no simulador) foi corrigido no Dia 6 com regressão.
 
@@ -208,22 +239,21 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 
 | Ordem | Tarefa | Dependência |
 |---|---|---|
-| 1 | Análises de preço por viagem (metrics do histórico: nº observações, queda acumulada, recordes) | nada (dados prontos) |
-| 2 | Monitoramento programado (agendador que executa a pesquisa por viagem ativa) | 1 |
-| 3 | Campo de origem no Trip (migration + input + query) | nada |
-| 4 | OpenAPI/Swagger formal | qualquer momento |
-| 5 | Provedor real (remover barreira anti-`REAL` com decisão explícita) | 1–4 maduros + credenciais de provedor |
-| 6 | Publicação da API (Dockerfile, env de produção, migrations no deploy, TLS/CORS/rate limit) | 1–5 + decisão de plataforma |
+| 1 | Monitoramento programado (agendador que executa a pesquisa por viagem ativa usando a análise já existente) | Dia 9 |
+| 2 | Campo de origem no Trip (migration + input + query) | nada |
+| 3 | OpenAPI/Swagger formal | qualquer momento |
+| 4 | Provedor real (remover barreira anti-`REAL` com decisão explícita) | 1–3 maduros + credenciais de provedor |
+| 5 | Publicação da API (Dockerfile, env de produção, migrations no deploy, TLS/CORS/rate limit) | 1–4 + decisão de plataforma |
 
 ---
 
 ## 10. Instruções para retomada
 
-**Leia antes de implementar**: `docs/contexto.md` (requisitos e regras) · `apps/api/src/app.js` · `modules/flights/flights.service.js` · `modules/offers/offers.service.js` · `integrations/flight-providers/index.js` + `normalize.js` · `prisma/schema.prisma`.
+**Leia antes de implementar**: `docs/contexto.md` (requisitos e regras) · `apps/api/src/app.js` · `modules/flights/flights.service.js` · `modules/offers/offers.service.js` · `modules/analysis/price-metrics.js` (cabeçalho com critérios, arredondamento e limitações) · `modules/analysis/analysis.service.js` · `integrations/flight-providers/index.js` + `normalize.js` · `prisma/schema.prisma`.
 
 **Não alterar sem necessidade**: `docs/contexto.md` · porta 5433 (PostgreSQL nativo do Windows na 5432) · barreira anti-`REAL` · estado JS ESM puro (sem TS/tsx) · contrato de provedores.
 
-**Preservar**: separação rota/service; nenhuma consulta ao banco em rotas; `SIMULATED` classificada no normalizador; provedor simulado puro (persistência em `modules/offers`); identidade por `externalKey`; tendências do banco; dependências mínimas justificadas.
+**Preservar**: separação rota/service; nenhuma consulta ao banco em rotas; `SIMULATED` classificada no normalizador; provedor simulado puro (persistência em `modules/offers`); identidade por `externalKey`; tendências do banco; dependências mínimas justificadas; **`price-metrics.js` é núcleo puro aprovado** — não introduzir Prisma, relógio ou I/O nele; análise é somente leitura e não é recomendação de compra.
 
 **Ambiente**:
 
@@ -231,9 +261,9 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 npm install          # já roda prisma generate (postinstall)
 docker compose up -d # banco na porta 5433
 cp .env.example .env
-npm test             # 24 testes, requer banco ativo
+npm test             # 64 testes, requer banco ativo
 npm run dev          # servidor com recarga
 curl http://localhost:3000/health → {"status":"ok","service":"trippulse-api"}
 ```
 
-> **Snapshot atual**: API com 7 endpoints, 3 tabelas, 24 testes automatizados em CI, 0 bugs abertos, próximos passos claros (análises → monitoramento → origem no Trip).
+> **Snapshot atual**: API com 8 endpoints, 3 tabelas, 64 testes automatizados (40 do Dia 9 ainda **não commitados**), 0 bugs abertos, próximos passos claros (monitoramento → origem no Trip → OpenAPI).

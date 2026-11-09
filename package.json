@@ -11,7 +11,7 @@
   "db:migrate": "prisma migrate dev && prisma generate",
   "db:deploy": "prisma migrate deploy",
   "postinstall": "prisma generate",
-  "test": "node --env-file=.env --test --test-force-exit"
+  "test": "node --env-file=.env --test --test-force-exit --test-concurrency=1"
   },
   "engines": {
     "node": ">=20.6.0"

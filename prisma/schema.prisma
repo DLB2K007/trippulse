@@ -74,3 +74,30 @@ model PriceHistory {
   @@index([offerId, observedAt])
   @@map("price_history")
 }
+
+// Execução registrada do ciclo de monitoramento (Dia 11.3).
+// Uma linha por execução: criada como RUNNING antes do ciclo, finalizada
+// sempre (COMPLETED ou FAILED) no finally — nunca RUNNING órfão.
+//
+// status: RUNNING | COMPLETED | FAILED. FAILED é falha GLOBAL do ciclo
+// (aborto); falhas por viagem são dados do relatório (items/failedCount).
+// trigger: MANUAL | SCHEDULED — vocabulário fechado já nesta migration para
+// o agendador futuro não exigir mudança de schema.
+model MonitoringRun {
+  id               String    @id @default(uuid()) @db.Uuid
+  status           String
+  trigger          String
+  startedAt        DateTime  @default(now()) @map("started_at")
+  finishedAt       DateTime? @map("finished_at")
+  durationMs       Int?      @map("duration_ms")
+  tripCount        Int       @default(0) @map("trip_count")
+  monitorableCount Int       @default(0) @map("monitorable_count")
+  skippedCount     Int       @default(0) @map("skipped_count")
+  okCount          Int       @default(0) @map("ok_count")
+  failedCount      Int       @default(0) @map("failed_count")
+  opportunityCount Int       @default(0) @map("opportunity_count")
+  items            Json
+
+  @@index([startedAt])
+  @@map("monitoring_runs")
+}

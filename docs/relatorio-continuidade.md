@@ -38,6 +38,12 @@ Em 9 dias incrementais, o TripPulse saiu de documento vazio para um **backend fu
 
 **Dia 10.2** — Correções da auditoria independente do Dia 10.1 (6 achados baixos, todos tratados): piso de moeda agora é fail-closed (`Object.hasOwn` — chaves herdadas de prototype como `constructor` não mais passam o portão); dias distintos espelham a seleção do núcleo do Dia 9 (linhas válidas, `current` = última cronológica — a linha bruta final inválida não infla mais a cobertura de dias); `startDate` impossível ao calendário (`2027-13-45`, `2027-02-30`) é viagem não ativa (ida-e-volta UTC); `GET /flights` com id não-UUID agora responde 400 como os demais recursos (era 500 `P2007`); README alinhado (exemplo do `excludedByReason`, comparação UTC, semântica de `RANK_LIMIT_EXCEEDED`). 8 testes de regressão novos (2 na política, 5 na redução de dias, 1 de integração).
 
+**Dia 11 — Monitoramento programado**, dividido em etapas:
+
+- **11.1 — Núcleo puro (`908a851`)**: `modules/monitoring/monitoring-core.js` com `runMonitoringCycle({trips, search, opportunities, now})` — seleção de viagens monitoráveis **reutilizando** `evaluateTripActive` (export aditivo em `opportunity-policy.js`: a regra é uma só, nunca importada de memória), pesquisa + oportunidades sequenciais por viagem, falha isolada por viagem com estágio (`SEARCH`/`OPPORTUNITIES`), contabilização fechada, vocabulários congelados (`MONITORING_ITEM_STATUS`, `MONITORING_FAILURE_STAGE`, `MONITORING_SKIP_REASON`), sem banco/HTTP/relógio. 12 testes unitários sem banco.
+- **11.2 — Execução manual (`34e9135`)**: `monitoring.service.js` (`startMonitoringRun` com lock in-process setado sincronicamente antes do primeiro `await` + liberação em `finally` + dependências injetáveis com defaults de produção) e `monitoring.routes.js` (`POST /monitoring/runs`, schema fechado verificado empiricamente no Fastify 5: POST sem body chega como `null` → body `object|null`, `maxProperties: 0`). Reutiliza integramente `searchFlightsForTrip`, `listTripOpportunities` e `listTrips` — nada duplicado. `GET` deliberadamente ausente (sem persistência ainda). 6 testes de integração. O script `test` ganhou `--test-concurrency=1`: causa raiz documentada de flakiness — arquivos de teste do node:test rodam em paralelo sobre o único PostgreSQL e a corrida entre arquivos (colisão com `opportunities-endpoint.test.js`) foi eliminada executando arquivos sequencialmente.
+- **11.3 — Persistência de execuções (working tree, pendente de commit)**: migration `20261109131507_add_monitoring_runs` (model `MonitoringRun` in edice parcial único Postgres `monitoring_runs_one_running_key` em `status = 'RUNNING'` — árbitro de concorrência **entre processos**; o lock in-process permanece como fast path). `startMonitoringRun` cria a linha RUNNING (P2002 → 409 **só** quando comprovadamente deste índice; obtido em `meta.driverAdapterError.cause.constraint.index` no Prisma 7 + adapter-pg, pois `meta.target` clássico não vem), executa o núcleo intocado e finaliza **sempre** no desfecho: `COMPLETED` (com contagens e itens do relatório) ou `FAILED` (ciclo abortou — falha global; falha por viagem segue sendo dado do relatório, não status). `POST /monitoring/runs` evoluiu para devolver o registro persistido (mudança de contrato documentada); `GET /monitoring/runs` devolve o histórico real (mais recentes primeiro, `limit` 1–100 default 20, sem dado fictício). 10 testes de integração/persistência (05 do 11.2 evoluídos + 4 novos).
+
 ---
 
 ## 2. Visão geral e estado por funcionalidade
@@ -53,10 +59,12 @@ Em 9 dias incrementais, o TripPulse saiu de documento vazio para um **backend fu
 | CI no GitHub Actions (testes em push/PR) | ✅ Implementado (Dia 8) |
 | Análise de preços por viagem (descritiva do histórico) | ✅ Implementado, testado e publicado (Dia 9, `fdfb7a7`) |
 | Identificação determinística de oportunidades | ✅ Implementado e testado (Dias 10.1 e 10.2, commitados) |
+| Monitoramento — núcleo puro do ciclo | ✅ Implementado e testado (Dia 11.1) |
+| Monitoramento — execução manual (POST) | ✅ Implementado e testado, com persistência e histórico (Dias 11.2–11.3) |
+| Monitoramento — agendador (execuções programadas) | ⏳ Dia 11.4 (trigger `SCHEDULED` já suportado pelo schema) |
 | Integração **real** com provedores | ❌ Não iniciado (bloqueado por decisão de escopo do MVP) |
 | Agente de IA / recomendações | ❌ Não iniciado |
-| Monitoramento programado, notificações | ❌ Não iniciado |
-| Hotéis, veículos, atividades; publicação | ❌ Não iniciado |
+| Notificações, hotéis, veículos, atividades; publicação | ❌ Não iniciado |
 
 ---
 
@@ -83,7 +91,8 @@ trippulse/
 │   │   ├── flights/          # orquestra pesquisa → normalização → snapshot
 │   │   ├── offers/           # domínio de ofertas: identidade, snapshot, histórico
 │   │   ├── analysis/         # price-metrics.js (puro) + service/rota de análise
-│   │   └── opportunities/    # política pura + service/rota de oportunidades
+│   │   ├── opportunities/    # política pura + service/rota de oportunidades
+│   │   └── monitoring/       # monitoring-core.js (puro) + service (lock+persistência)/roteamento
 │   ├── integrations/
 │   │   └── flight-providers/
 │   │       ├── index.js      # registro de provedores (único ponto de extensão)
@@ -95,9 +104,9 @@ trippulse/
 │   ├── app.js                # monta Fastify + /health + plugins no prefixo /trips
 │   └── server.js             # bootstrap
 ├── docs/ (contexto.md, relatorio-continuidade.md)
-├── prisma/ (schema.prisma + 2 migrations)
+├── prisma/ (schema.prisma + 3 migrations)
 ├── prisma.config.ts          # conexão do CLI (tolerante a .env ausente)
-├── tests/ (10 arquivos, 103 testes)
+├── tests/ (12 arquivos, 125 testes)
 ├── docker-compose.yml · .env.example · README.md · package.json
 ```
 
@@ -112,6 +121,8 @@ trippulse/
 | `GET` | `/trips/:tripId/offers/history` | 200/400/404 | offers.routes (só leitura) |
 | `GET` | `/trips/:tripId/analysis` | 200/400/404 | analysis.routes (só leitura) |
 | `GET` | `/trips/:tripId/opportunities` | 200/400/404 | opportunities.routes (só leitura) |
+| `POST` | `/monitoring/runs` | 200/409 | monitoring.routes (executae persiste) |
+| `GET` | `/monitoring/runs` | 200/400 | monitoring.routes (só leitura) |
 
 ### Fluxo principal
 
@@ -135,6 +146,18 @@ GET /trips/:tripId/analysis
   → analyzePriceSeries por oferta (núcleo puro, sem I/O)
   → resumo + qualidade dos dados + explicação por oferta + limitações
   → nenhuma escrita, nenhum carimbo de tempo: mesma resposta para o mesmo estado
+
+POST /monitoring/runs
+  → validações (now/trigger) → lock in-process (set síncrono; 409 em uso)
+  → INSERT monitoring_runs (RUNNING) — P2002 do índice parcial → 409
+  → runMonitoringCycle (núcleo puro do 11.1):
+      para cada viagem: evaluateTripActive → skip | search (escreve histórico)
+      → opportunities (só leitura) → item OK | FAILED(stage)
+  → UPDATE sempre (finally): COMPLETED (contagens+itens) ou FAILED (aborto)
+  → resposta: registro persistido (runId, status, contagens, itens)
+
+GET /monitoring/runs?limit=20
+  → leitura EXCLUSIVA do banco: execuções, mais recentes primeiro (limit 1–100)
 ```
 
 **Padrão canônico de oferta** (definido em `normalize.js`): `{ provider, isSimulated, dataClassification, type, route, dates, flight, price, relatedQuery }` + `history: { observedAt, current, previous, best, trend }`.
@@ -152,9 +175,16 @@ trips (Trip)
         baggage_pieces · refundable · external_key · created_at · updated_at
         └─< price_history (PriceHistory) [offer_id FK, CASCADE] @@index(offer_id, observed_at)
               id · offer_id · currency · total · base · taxes · observed_at
+
+monitoring_runs (MonitoringRun)  — sem FK: registro operacional, independente de viagens
+  id uuid pk · status (RUNNING|COMPLETED|FAILED) · trigger (MANUAL|SCHEDULED) ·
+  started_at · finished_at? · duration_ms? · trip_count · monitorable_count ·
+  skipped_count · ok_count · failed_count · opportunity_count · items jsonb
+  @@index(started_at)
+  § índice parcial único: UNIQUE(status) WHERE status = 'RUNNING'  ← árbitro
 ```
 
-**Migrations aplicadas**: `20261107211054_init_create_trips` (trips) e `20261107214055_add_flight_offers_and_price_history` (flight_offers, price_history, FKs, índices).
+**Migrations aplicadas**: `20261107211054_init_create_trips` (trips), `20261107214055_add_flight_offers_and_price_history` (flight_offers, price_history, FKs, índices) e `20261109131507_add_monitoring_runs` (monitoring_runs + índice parcial único escrita na mão — Prisma não modela índice parcial).
 
 **Ambiente local**: container `trippulse-db` (postgres:17-alpine, healthcheck, volume nomeado). Porta **5433 no host** → 5432 no container. `DATABASE_URL=postgresql://trippulse:trippulse@localhost:5433/trippulse?schema=public`.
 
@@ -176,14 +206,17 @@ trips (Trip)
 | 9 (`29dca01`, `8a85392`; publicado em `fdfb7a7`) | `modules/analysis/{price-metrics,analysis.service,analysis.routes}.js` (novos), `app.js` (registro da rota), `tests/{price-metrics,analysis-endpoint}.test.js` (novos), README (endpoint e contrato), este relatório. **Sem migration e sem dependência nova.** |
 | 10.1 (`c3eb0c3`) | `modules/opportunities/{opportunity-policy,opportunities.service,opportunities.routes}.js` (novos), `app.js` (registro da rota), `tests/{opportunities-policy,opportunities-endpoint}.test.js` (novos), README (endpoint, política e motivos), este relatório. **Sem migration, sem dependência e sem persistência.** |
 | 10.2 | **Correções da auditoria**: `opportunity-policy.js` (piso fail-closed com `Object.hasOwn`; `startDate` com ida-e-volta de calendário), `opportunities.service.js` (`distinctDaysBeforeCurrent` espelhando o núcleo, exportada pura), `flights.service.js` (400 para id não-UUID), `tests/{opportunities-policy,api}.test.js` (+3 regressões), `tests/opportunities-days.test.js` (novo, 5), README (3 alinhamentos), este relatório |
+| 11.1 (`908a851`) | `modules/monitoring/monitoring-core.js` (novo), `tests/monitoring-core.test.js` (novo, 12), `opportunity-policy.js` (export aditivo de `evaluateTripActive`, +6/−1). **Sem migration e sem dependência nova.** |
+| 11.2 (`34e9135`) | `modules/monitoring/{monitoring.service,monitoring.routes}.js` (novos), `app.js` (registro em `/monitoring`), `tests/monitoring-endpoint.test.js` (novo, 6), `package.json` (script `test` com `--test-concurrency=1`). **Sem migration e sem dependência nova.** |
+| 11.3 (pendente) | `migration 20261109131507_add_monitoring_runs` (nova, com índice parcial único manual), `schema.prisma` (model `MonitoringRun`), `monitoring.service.js` (persistência + árbitro), `monitoring.routes.js` (GET + POST evoluído), `tests/monitoring-endpoint.test.js` (10 testes), README (seção `/monitoring`), este relatório. **Dependência nova: nenhuma.** |
 
-**Scripts npm atuais**: `start` · `dev` (`--watch`) · `start:no-env` · `db:migrate` (`migrate dev && generate`) · `db:deploy` (= `prisma migrate deploy`, também usado no CI) · `postinstall` (`prisma generate`) · `test` (`node --env-file=.env --test --test-force-exit`).
+**Scripts npm atuais**: `start` · `dev` (`--watch`) · `start:no-env` · `db:migrate` (`migrate dev && generate`) · `db:deploy` (= `prisma migrate deploy`, também usado no CI) · `postinstall` (`prisma generate`) · `test` (`node --env-file=.env --test --test-force-exit --test-concurrency=1` — arquivos sequenciais porque todos compartilham o mesmo PostgreSQL).
 
 ---
 
 ## 6. Testes
 
-**103/103 passando** (execução ~1,3s): suíte do Dia 10.1 (95) + 8 regressões do Dia 10.2:
+**125/125 passando** (arquivos sequenciais — ver Decisão 22): estado do Dia 11.3:
 
 | Arquivo | Testes | O que protege |
 |---|---|---|
@@ -197,6 +230,8 @@ trips (Trip)
 | `tests/opportunities-policy.test.js` | 28 | política pura: portões (viagem, dado, comparabilidade, amostra, recência, classificação, piso), motivos e precedência, limites exatos do piso (R$ 99,99 × R$ 100,00) e de 24 h, ranking e limite por moeda, determinismo, imutabilidade, contabilidade fechada e validação da política; **regressões: piso fail-closed contra chaves herdadas de prototype (`constructor`) e `startDate` impossível ao calendário (`2027-13-45`, `2027-02-30`)** |
 | `tests/opportunities-endpoint.test.js` | 5 | endpoint com fixtures determinísticas: 400/404 e rejeição de querystring; viagem sem ofertas; real × simulada × sem queda (motivos e contagens); lista vazia quando só há simulados; repetibilidade, ausência de escrita e contratos de `/analysis` e `/offers/history` preservados |
 | `tests/opportunities-days.test.js` | 5 | redução pura de dias distintos: regressão da linha final inválida (não conta o dia do `current` como histórico), linhas inutilizáveis descartadas antes de eleger o `current`, entrada nula/vazia/sem histórico, `observedAt` inválido em qualquer posição |
+| `tests/monitoring-core.test.js` | 12 | núcleo puro do ciclo: viagem iniciando hoje/executável, futura, inativa sem chamadas, nenhuma monitorável, lista vazia, contagem de oportunidades, falha isolada de pesquisa (oportunidades não chamadas), falha isolada de oportunidades (pesquisa conta), múltiplas misturadas com contagens fechadas, determinismo, imutabilidade+freeze, dependências/`now` inválidos (fail alto, zero chamadas) |
+| `tests/monitoring-endpoint.test.js` | 10 | persistência: POST grava run COMPLETED refletindo relatório (linha verificada no banco); POST valida body/query ({} ok); GET histórico real com ordem decrescente e limit; GET valida limit; **árbitro: RUNNING de outro processo → 409 e nenhuma segunda linha RUNNING**; 200+409 simultâneos com lock liberado depois; falha isolada por viagem com run COMPLETED; **ciclo abortado → run FAILED, finishedAt gravado, nenhum RUNNING órfão**; concorrência in-process (1 ciclo, 1 rejeição, 1 pesquisa); trigger fora do vocabulário → TypeError sem criar linha |
 
 Histórico dos testes manuais (Dias 1–5) está documentado como superseded pela suíte. Falhas encontradas durante o desenvolvimento foram todas corrigidas e viraram regressões quando aplicável.
 
@@ -224,6 +259,10 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 18. **`historicalDifference` é diferença histórica observada**: mediana das observações anteriores menos o preço atual. Nunca é economia garantida, projeção futura ou recomendação de compra; a resposta carrega limitações e não expõe campo de garantia
 19. **Ranking e piso são por moeda, sem câmbio**: moedas diferentes nunca são comparadas, o limite de 10 é por moeda e uma moeda sem piso declarado é excluída (`NO_CURRENCY_FLOOR`) em vez de herdar o piso de outra. `startDate` é data de calendário (`DATE`, sem hora nem fuso): viagem com partida passada não é monitorável
 20. **Portões fail-closed por construção (Dia 10.2)**: duas fontes de verdade não podem divergir — a seleção de "observação atual" (núcleo `price-metrics`) e a contagem de dias distintos (`opportunities.service`) foram alinhadas no mesmo critério (linhas válidas, `current` = última cronológica); moeda sem piso declarado exclui com `Object.hasOwn` (chaves herdadas de prototype não são piso); data impossível de calendário não é viagem ativa. Sempre falhar para o lado conservador da decisão
+21. **Arbitração dupla da concorrência no monitoramento (Dia 11.3)**: lock in-process (set síncrono antes do 1º `await`, 409 fast path no mesmo processo) **e** índice parcial único do Postgres em `status = 'RUNNING'` (workers/processos diferentes; `P2002` → 409). O `P2002` só vira 409 quando comprovadamente deste índice: cheque pelo **nome exato** — no Prisma 7 + adapter-pg o nome vem em `meta.driverAdapterError.cause.constraint.index` (postgrest `23505`), o `meta.target` clássico não vem; qualquer outro conflito sobe cru (500) como bug
+22. **Arquivos de teste rodando sequencialmente** (`--test-concurrency=1`): o `node:test` roda arquivos em paralelo sobre o único Postgres de dev e o ciclo de monitoramento (que escreve em **todas** as viagens ativas) colidia com fixtures de outros arquivos — a flakiness observada em `opportunities-endpoint.test.js:258` tinha essa causa. Testes internos a um arquivo continuam sequenciais por padrão do runner
+23. **Persistência reflete o núcleo, nunca o duplica (Dia 11.3)**: a linha `MonitoringRun` grava exatamente o relatório de `runMonitoringCycle` (contagem fechada, itens congelados em JSONB) e a derivação de `status` COMPLETED/FAILED é a decisão deferida do 11.1 — `FAILED` só para aborto global; falha por viagem é `items[].status = FAILED` e a execução segue COMPLETED. `trigger` MANUAL/SCHEDULED fecha o vocabulário **antes** do agendador (Dia 11.4) para não exigir migration nova
+24. **POST /monitoring/runs evoluiu de contrato no 11.3** (relatório puro → registro persistido com `runId`/`status`/janela): mudança única, documentada no README e nos testes — o histórico anterior não existia, não há compatibilidade a preservar
 
 ---
 
@@ -239,7 +278,7 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 **Funcionalidades incompletas (planejadas, não implementadas):**
 - Campo de **origem** no Trip (pesquisa usa origem fictícia do simulador)
 - Análise limitada a uma oferta por vez, sem comparação entre ofertas/provedores, sem recorde/queda acumulada e sem janela temporal
-- Monitoramento programado (execução periódica das pesquisas por viagem)
+- **Agendador do monitoramento (Dia 11.4)**: o ciclo, a execução manual e a persistência existem; falta o disparo programado (`trigger: SCHEDULED` já suportado pelo schema — sem migration nova)
 - Agente de IA, notificações, hotéis/veículos/atividades, provedores reais, publicação
 
 **Limitações conhecidas da análise (documentadas na resposta):**
@@ -250,13 +289,17 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 
 **Bugs conhecidos:** nenhum aberto. O único bug real já registrado (datas `Invalid` no simulador) foi corrigido no Dia 6 com regressão.
 
+**Riscos documentados do monitoramento (Dia 11.3):**
+- Se o banco cair **exatamente na finalização**, a linha pode ficar RUNNING (a `INSERT` de UPDATE de desfecho falhou e o erro original é preservado deliberadamente). É risco registrado, não bug: exige indisponibilidade do banco no meio da execução; o índice parcial garante que um novo ciclo informará 409 até a linha ser limpa manualmente.
+- Sem alerta de execução FAILED/órfã (notificações pertencem a outro escopo).
+
 ---
 
 ## 9. Próximas etapas (ordem recomendada)
 
 | Ordem | Tarefa | Dependência |
 |---|---|---|
-| 1 | Monitoramento programado (agendador que executa a pesquisa por viagem ativa usando a análise já existente) | Dia 9 |
+| 1 | **Agendador do monitoramento (Dia 11.4)** — disparo programado do ciclo já existente com `trigger: SCHEDULED` (núcleo, execução manual e persistência prontos; sem migration) | Dias 11.1–11.3 |
 | 2 | Campo de origem no Trip (migration + input + query) | nada |
 | 3 | OpenAPI/Swagger formal | qualquer momento |
 | 4 | Provedor real (remover barreira anti-`REAL` com decisão explícita) | 1–3 maduros + credenciais de provedor |
@@ -266,11 +309,11 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 
 ## 10. Instruções para retomada
 
-**Leia antes de implementar**: `docs/contexto.md` (requisitos e regras) · `apps/api/src/app.js` · `modules/flights/flights.service.js` · `modules/offers/offers.service.js` · `modules/analysis/price-metrics.js` (cabeçalho com critérios, arredondamento e limitações) · `modules/analysis/analysis.service.js` · `integrations/flight-providers/index.js` + `normalize.js` · `prisma/schema.prisma`.
+**Leia antes de implementar**: `docs/contexto.md` (requisitos e regras) · `apps/api/src/app.js` · `modules/flights/flights.service.js` · `modules/offers/offers.service.js` · `modules/analysis/price-metrics.js` (cabeçalho com critérios, arredondamento e limitações) · `modules/analysis/analysis.service.js` · `modules/monitoring/monitoring-core.js` (núcleo puro do ciclo + contrato) · `modules/monitoring/monitoring.service.js` (lock + árbitro + persistência) · `integrations/flight-providers/index.js` + `normalize.js` · `prisma/schema.prisma`.
 
 **Não alterar sem necessidade**: `docs/contexto.md` · porta 5433 (PostgreSQL nativo do Windows na 5432) · barreira anti-`REAL` · estado JS ESM puro (sem TS/tsx) · contrato de provedores.
 
-**Preservar**: separação rota/service; nenhuma consulta ao banco em rotas; `SIMULATED` classificada no normalizador; provedor simulado puro (persistência em `modules/offers`); identidade por `externalKey`; tendências do banco; dependências mínimas justificadas; **`price-metrics.js` é núcleo puro aprovado** — não introduzir Prisma, relógio ou I/O nele; análise é somente leitura e não é recomendação de compra.
+**Preservar**: separação rota/service; nenhuma consulta ao banco em rotas; `SIMULATED` classificada no normalizador; provedor simulado puro (persistência em `modules/offers`); identidade por `externalKey`; tendências do banco; dependências mínimas justificadas; **`price-metrics.js` é núcleo puro aprovado** — não introduzir Prisma, relógio ou I/O nele; **`monitoring-core.js` é núcleo puro aprovado** (mesma regra) e `evaluateTripActive` segue sendo A ÚNICA regra de viagem monitorável; análise/oportunidades são somente leitura e não são recomendação de compra.
 
 **Ambiente**:
 
@@ -278,9 +321,9 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 npm install          # já roda prisma generate (postinstall)
 docker compose up -d # banco na porta 5433
 cp .env.example .env
-npm test             # 103 testes, requer banco ativo
+npm test             # 125 testes, requer banco ativo
 npm run dev          # servidor com recarga
 curl http://localhost:3000/health → {"status":"ok","service":"trippulse-api"}
 ```
 
-> **Snapshot atual**: API com 9 endpoints, 3 tabelas, 103 testes automatizados (0 abertos; estilos Dia 1–9 validados pelo CI, regressões do 10.2 subirão no próximo push), primeiros passos claros (monitoramento → origem no Trip → OpenAPI).
+> **Snapshot atual**: API com 12 endpoints, 4 tabelas, 125 testes automatizados (0 abertos; estilos Dia 1–10 e Dia 11.1–11.2 validados pelo CI — o 11.3 sobe no próximo push; Dias 11.1/11.2 publicados em runs verdes), primeiros passos claros (agendador 11.4 → origem no Trip → OpenAPI).

@@ -163,6 +163,14 @@ trippulse/
 | `GET`    | `/trips/:tripId/analysis` | Análise de preços por viagem (somente leitura)  | `200`   |
 | `GET`    | `/trips/:tripId/opportunities` | Oportunidades determinísticas de compra (somente leitura) | `200` |
 
+### Monitoramento (`/monitoring`)
+
+| Método | Rota | Descrição | Sucesso |
+|--------|------|-----------|---------|
+| `POST` | `/monitoring/runs` | Executa um ciclo de monitoramento e **persiste o registro** da execução | `200` |
+| `GET`  | `/monitoring/runs` | Histórico real de execuções (mais recentes primeiro) | `200` |
+
+
 ### Corpo de viagens (`POST` / `PUT`)
 
 ```json
@@ -452,3 +460,46 @@ Motivos de exclusão: `TRIP_NOT_ACTIVE`, `SIMULATED_DATA`, `UNCLASSIFIED_DATA`, 
 **Moedas nunca se misturam:** o ranking é feito dentro de cada moeda, o limite é por moeda e não existe conversão cambial. Uma moeda sem piso absoluto declarado é excluída (`NO_CURRENCY_FLOOR`) em vez de herdar o piso de outra.
 
 **Com os dados atuais a lista é vazia por construção**, porque o único provedor é simulado e toda oferta `SIMULATED` é excluída. Isso é comportamento esperado, não defeito: o endpoint expõe o funil de exclusões até existir provedor real.
+
+### Monitoramento (`POST` / `GET` `/monitoring/runs`)
+
+Executa o ciclo de monitoramento e persiste **uma linha por execução** em `monitoring_runs`. Respostas são honestas sobre dados simulados e sobre falhas individuais por viagem (estágio `SEARCH`/`OPPORTUNITIES`).
+
+```bash
+# executar ciclo (sem body/query; {} é aceito, propriedades → 400)
+curl -X POST http://localhost:3000/monitoring/runs
+
+# histórico (limit: 1–100, default 20; fora da faixa → 400)
+curl http://localhost:3000/monitoring/runs?limit=10
+```
+
+Resposta do ciclo concluído (registro persistido):
+
+```json
+{
+  "runId": "uuid-da-execucao",
+  "status": "COMPLETED",
+  "trigger": "MANUAL",
+  "startedAt": "...",
+  "finishedAt": "...",
+  "durationMs": 57,
+  "tripCount": 2,
+  "monitorableCount": 1,
+  "skippedCount": 1,
+  "okCount": 1,
+  "failedCount": 0,
+  "opportunityCount": 0,
+  "items": [
+    { "tripId": "...", "status": "OK", "opportunityCount": 0, "evaluatedOfferCount": 4, "containsSimulatedData": true },
+    { "tripId": "...", "status": "SKIPPED", "reason": "TRIP_NOT_ACTIVE", "detail": "..." }
+  ]
+}
+```
+
+Contratos e regras:
+
+- **Status da execução:** `RUNNING` → `COMPLETED` (ciclo terminou) ou `FAILED` (ciclo **abortou** globalmente). Falha **individual** de viagem **não** torna a execução `FAILED` — é dado do relatório (`items[].status: FAILED` + `stage`), e a execução continua `COMPLETED` com `failedCount > 0`.
+- **Contagens fechadas:** `okCount + failedCount = monitorableCount` e `monitorableCount + skippedCount = tripCount`.
+- **Concorrência:** é proibida em dois níveis — lock in-process (mesmo processo) **e** índice parcial único do Postgres em `status = 'RUNNING'` (processos/workers diferentes). A segunda tentativa recebe `409` com "Já existe uma execução de monitoramento em andamento." A liberação é garantida em `finally`, inclusive em falha: **nenhum `RUNNING` fica órfão** em falhas normais de execução.
+- **Cada ciclo real escreve no banco:** pesquisa cria/atualiza ofertas `SIMULATED` e grava observações em `price_history` — o resultado de oportunidades continua **vazio por construção** com o único provedor atual.
+- `GET` não aceita filtro além de `limit` e só devolve execuções **persistidas de verdade** — sem dado fictício (`?force=1` → `400`).

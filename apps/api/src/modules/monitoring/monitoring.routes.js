@@ -1,9 +1,12 @@
-// Execução MANUAL do monitoramento via HTTP — recursos em /monitoring.
-// Regra zero: a rota não contém lógica; chama o service (que chama o núcleo
-// puro do Dia 11.1) e o Fastify converte HttpError em resposta.
+// Recursos de monitoramento em /monitoring (Dia 11.3).
+// Regra zero: a rota não contém lógica; chama o service (que orquestra o
+// núcleo puro do Dia 11.1 + persistência) e o Fastify converte HttpError.
 //
-// Sem GET nesta etapa (Dia 11.2): não existe persistência de execuções, e
-// não há histórico fictício. `GET /monitoring/runs` entra no Dia 11.3.
+//  - POST /runs: executa o ciclo e devolve o REGISTRO PERSISTIDO
+//    (runId, status, contagens, itens). Contrato evoluiu no 11.3 —
+//    documentado no README e nos testes (nunca quebra silenciosa).
+//  - GET  /runs: histórico real de execuções persistidas (mais recentes
+//    primeiro, limit 1–100, default 20). Sem dado fictício.
 
 import * as monitoringService from './monitoring.service.js';
 
@@ -22,6 +25,15 @@ const EMPTY_BODY = {
   maxProperties: 0,
 };
 
+const LIST_QUERYSTRING = {
+  type: 'object',
+  additionalProperties: false,
+  maxProperties: 1,
+  properties: {
+    limit: { type: 'integer', minimum: 1, maximum: 100, default: 20 },
+  },
+};
+
 export async function monitoringRoutes(app) {
   app.post(
     '/runs',
@@ -33,6 +45,14 @@ export async function monitoringRoutes(app) {
     },
     async () => {
       return monitoringService.startMonitoringRun();
+    }
+  );
+
+  app.get(
+    '/runs',
+    { schema: { querystring: LIST_QUERYSTRING } },
+    async (request) => {
+      return monitoringService.listMonitoringRuns({ limit: request.query.limit });
     }
   );
 }

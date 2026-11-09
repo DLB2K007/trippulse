@@ -1,6 +1,6 @@
 # Relatório de continuidade — TripPulse
 
-> Atualizado em 2026-11-08, após os commits `29dca01` (métricas puras) e `8a85392` (endpoint de análise), com `main` **2 commits à frente de `origin/main`** (`54c1981`): o Dia 9 está commitado localmente e **ainda não publicado**. Cobre os **Dias 1 a 9**.
+> Atualizado em 2026-11-08, com o **Dia 9 publicado em `fdfb7a7`** (`main` sincronizada com `origin/main`) e validado pela run `42520790068` (verde), e o **Dia 10.1 implementado localmente, ainda não commitado**. Cobre os **Dias 1 a 10.1**.
 > Em 2026-11-08 o histórico foi reescrito para corrigir a autoria: todos os 14 commits agora são `DLB2K007 <danielbordini027@gmail.com>`. Os hashes citados neste relatório já são os novos; os antigos não existem mais na `main`.
 > Documento de contexto oficial do projeto: **`docs/contexto.md`** (o usuário pode referir-se a ele por outros nomes, como "PROJECT_CONTEXT.md" — é sempre este arquivo).
 > Versões anteriores deste relatório cobrem o estado até o Dia 5 (commit `9605f03`).
@@ -29,10 +29,12 @@ Em 9 dias incrementais, o TripPulse saiu de documento vazio para um **backend fu
 
 **Dia 8** — Integração contínua no GitHub Actions: workflow `.github/workflows/ci.yml` que roda os 24 testes a cada push na `main` e em pull requests, com PostgreSQL 17 efêmero como serviço, migrations aplicadas por `npm run db:deploy` e falha de teste derrubando o job (commit `f5555e6`; primeira execução verde: run `42419066310`, anterior à reescrita de autoria). Depois da reescrita, o commit `54c1981` foi validado pela run `42517712825` (verde). O mesmo commit corrigiu o fechamento documental: hash e contagem de testes, ressalva sobre branch protection e próximos passos de publicação. O ajuste final do workflow (script `db:deploy`) está em `54c1981`.
 
-**Dia 9** — Análise de preços, em duas etapas commitadas localmente (`29dca01` e `8a85392`) e ainda **não publicadas**:
+**Dia 9** — Análise de preços, em duas etapas (`29dca01` e `8a85392`), publicadas em `fdfb7a7` e **validadas pelo CI** (run `42520790068`, verde):
 
 - **Passo 1 (aprovado)**: núcleo puro `modules/analysis/price-metrics.js` — séries de preço viram centavos inteiros, mediana calculada **apenas com observações anteriores**, mínimo de 3 anteriores (4 no total) para classificar, e classificação descritiva `INSUFFICIENT_DATA` / `OPPORTUNITY` / `FAIR` / `ABOVE_HISTORY`, independente de `trend` (`DROPPED` ≠ `OPPORTUNITY`). 33 testes unitários, sem banco (o último cobre histórico suficiente sem observação atual). Inclui teto de centavos seguros, escala decimal para meio centavo e média por decomposição inteira (verificada contra oráculo `BigInt`).
 - **Passo 2**: `analysis.service.js` compõe o núcleo puro com os services existentes (`getTripById` + `listOfferHistoryForTrip`) e `analysis.routes.js` expõe `GET /trips/:tripId/analysis`, estritamente de leitura. 7 testes de integração com fixtures determinísticas.
+
+**Dia 10.1** — Identificação determinística de oportunidades (**implementado localmente, não commitado**): política pura `modules/opportunities/opportunity-policy.js` aplica portões de elegibilidade sobre a análise do Dia 9 sem recalcular mediana nem percentual — viagem com `startDate` não passado, somente `REAL`, moeda única com preço atual, no mínimo 5 observações anteriores em 2 dias distintos, observação com até 24 h, `classification = OPPORTUNITY` e diferença absoluta mínima de R$ 100,00. `opportunities.service.js` compõe `analyzeTripPrices` + `listOfferHistoryForTrip`, e `opportunities.routes.js` expõe `GET /trips/:tripId/opportunities` (leitura pura, sem querystring). Toda exclusão tem motivo de vocabulário fechado, o ranking e o piso são por moeda (sem câmbio) e `historicalDifference` é **diferença histórica observada**, não economia garantida. 26 testes unitários + 5 de integração. **Sem migration, sem dependência nova e sem persistência de oportunidade.**
 
 ---
 
@@ -47,7 +49,8 @@ Em 9 dias incrementais, o TripPulse saiu de documento vazio para um **backend fu
 | Persistência de ofertas + histórico de preços | ✅ Implementado e testado (Dias 5 e 7) |
 | Documentação e **testes automatizados** dos fluxos | ✅ Implementado e testado (Dia 6) |
 | CI no GitHub Actions (testes em push/PR) | ✅ Implementado (Dia 8) |
-| Análise de preços por viagem (descritiva do histórico) | ✅ Implementado e testado (Dia 9; commits `29dca01` e `8a85392`, não publicados) |
+| Análise de preços por viagem (descritiva do histórico) | ✅ Implementado, testado e publicado (Dia 9, `fdfb7a7`) |
+| Identificação determinística de oportunidades | ✅ Implementado e testado localmente (Dia 10.1, não commitado) |
 | Integração **real** com provedores | ❌ Não iniciado (bloqueado por decisão de escopo do MVP) |
 | Agente de IA / recomendações | ❌ Não iniciado |
 | Monitoramento programado, notificações | ❌ Não iniciado |
@@ -77,7 +80,8 @@ trippulse/
 │   │   ├── trips/            # CRUD de viagens
 │   │   ├── flights/          # orquestra pesquisa → normalização → snapshot
 │   │   ├── offers/           # domínio de ofertas: identidade, snapshot, histórico
-│   │   └── analysis/         # price-metrics.js (puro) + service/rota de análise
+│   │   ├── analysis/         # price-metrics.js (puro) + service/rota de análise
+│   │   └── opportunities/    # política pura + service/rota de oportunidades
 │   ├── integrations/
 │   │   └── flight-providers/
 │   │       ├── index.js      # registro de provedores (único ponto de extensão)
@@ -91,7 +95,7 @@ trippulse/
 ├── docs/ (contexto.md, relatorio-continuidade.md)
 ├── prisma/ (schema.prisma + 2 migrations)
 ├── prisma.config.ts          # conexão do CLI (tolerante a .env ausente)
-├── tests/ (7 arquivos, 64 testes)
+├── tests/ (9 arquivos, 95 testes)
 ├── docker-compose.yml · .env.example · README.md · package.json
 ```
 
@@ -105,6 +109,7 @@ trippulse/
 | `GET` | `/trips/:tripId/flights` | 200/404 | flights.routes (escreve snapshot) |
 | `GET` | `/trips/:tripId/offers/history` | 200/400/404 | offers.routes (só leitura) |
 | `GET` | `/trips/:tripId/analysis` | 200/400/404 | analysis.routes (só leitura) |
+| `GET` | `/trips/:tripId/opportunities` | 200/400/404 | opportunities.routes (só leitura) |
 
 ### Fluxo principal
 
@@ -166,7 +171,8 @@ trips (Trip)
 | 6 (`e90a3d9`) | `tests/{api,normalize,offers-service,simulated-provider}.test.js`, **correção de bug em** `simulated-flight-provider.js` (`depart_at` com `padStart(2,'0')`), script `test` no `package.json` |
 | 7 (`c525ac9`) | `modules/offers/{offers.routes,offers.service}.js` (endpoint history), `shared/uuid.js`, `prisma.config.ts` (tolerante), `package.json` (`postinstall`, `db:migrate` encadeado), `tests/offers-history.test.js`, refactor mínimo em `trips.service.js` |
 | 8 (`f5555e6` → `54c1981`) | `.github/workflows/ci.yml` (novo): push na `main` + PRs → `npm ci` → `npm run db:deploy` → `npm test` com serviço `postgres:17-alpine` efêmero; README (badge, seção CI, próximos passos de publicação); este relatório |
-| 9 (`29dca01`, `8a85392` — locais) | `modules/analysis/{price-metrics,analysis.service,analysis.routes}.js` (novos), `app.js` (registro da rota), `tests/{price-metrics,analysis-endpoint}.test.js` (novos), README (endpoint e contrato), este relatório. **Sem migration e sem dependência nova.** |
+| 9 (`29dca01`, `8a85392`; publicado em `fdfb7a7`) | `modules/analysis/{price-metrics,analysis.service,analysis.routes}.js` (novos), `app.js` (registro da rota), `tests/{price-metrics,analysis-endpoint}.test.js` (novos), README (endpoint e contrato), este relatório. **Sem migration e sem dependência nova.** |
+| 10.1 (**não commitado**) | `modules/opportunities/{opportunity-policy,opportunities.service,opportunities.routes}.js` (novos), `app.js` (registro da rota), `tests/{opportunities-policy,opportunities-endpoint}.test.js` (novos), README (endpoint, política e motivos), este relatório. **Sem migration, sem dependência e sem persistência.** |
 
 **Scripts npm atuais**: `start` · `dev` (`--watch`) · `start:no-env` · `db:migrate` (`migrate dev && generate`) · `db:deploy` (= `prisma migrate deploy`, também usado no CI) · `postinstall` (`prisma generate`) · `test` (`node --env-file=.env --test --test-force-exit`).
 
@@ -174,7 +180,7 @@ trips (Trip)
 
 ## 6. Testes
 
-**64/64 passando** (execução ~1,4s), bucket atual revalidado em 2026-11-08 sobre o estado commitado (24 anteriores + 40 do Dia 9):
+**95/95 passando** (execução ~1,4s): 64 anteriores revalidados em 2026-11-08 localmente e no CI (run `42520790068`, sobre `fdfb7a7`) + 31 novos do Dia 10.1, executados apenas localmente (ainda não commitados):
 
 | Arquivo | Testes | O que protege |
 |---|---|---|
@@ -185,6 +191,8 @@ trips (Trip)
 | `tests/offers-history.test.js` | 4 | endpoint de histórico: 404/400; vazio pré-pesquisa; consolidação após 2 pesquisas; cascade |
 | `tests/price-metrics.test.js` | 33 | núcleo puro: limiares (10%/-10 e 9,99%), mediana sem o preço atual, `DROPPED`≠`OPPORTUNITY`, `ROSE`≠`ABOVE_HISTORY`, moeda mista, observações inválidas, ordenação/imutabilidade, centavos e meio centavo, teto de inteiro seguro, média de somas grandes, validação de `options`, empates de `observedAt` |
 | `tests/analysis-endpoint.test.js` | 7 | endpoint de análise com **fixtures determinísticas**: 400/404 e rejeição de querystring; viagem sem ofertas; histórico insuficiente (inclui oferta sem histórico e observação inválida); as três classificações; identificação de dados simulados × reais; moeda mista; repetibilidade + ausência de escrita + contrato de `/offers/history` preservado |
+| `tests/opportunities-policy.test.js` | 26 | política pura: portões (viagem, dado, comparabilidade, amostra, recência, classificação, piso), motivos e precedência, limites exatos do piso (R$ 99,99 × R$ 100,00) e de 24 h, ranking e limite por moeda, determinismo, imutabilidade, contabilidade fechada e validação da política |
+| `tests/opportunities-endpoint.test.js` | 5 | endpoint com fixtures determinísticas: 400/404 e rejeição de querystring; viagem sem ofertas; real × simulada × sem queda (motivos e contagens); lista vazia quando só há simulados; repetibilidade, ausência de escrita e contratos de `/analysis` e `/offers/history` preservados |
 
 Histórico dos testes manuais (Dias 1–5) está documentado como superseded pela suíte. Falhas encontradas durante o desenvolvimento foram todas corrigidas e viraram regressões quando aplicável.
 
@@ -207,6 +215,10 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 13. **Sem prefixo `/api`**: o endpoint foi montado como `/trips/:tripId/analysis` porque **todas** as rotas do projeto já vivem em `/trips` (o prefixo `/api` não existe em `app.js`). Mudar o prefixo alteraria endpoints já concluídos e não foi feito
 14. **Rota validada por uma única configuração de schema** (`params` + `querystring`): o endpoint não tem parâmetros e usa `maxProperties: 0` para recusar qualquer querystring com 400. `additionalProperties: false` não serve aqui porque o Ajv do Fastify roda com `removeAdditional: true` e **removeria** a chave em silêncio
 15. **Indicadores de amostra e de resultado são eixos distintos**: `dataQuality.offersWithEnoughHistory` mede tamanho de série (≥ `minPreviousObservations` anteriores) e `summary.classifiedOfferCount` mede veredito. Uma oferta com amostra suficiente continua `INSUFFICIENT_DATA` se a moeda for mista, então os números podem divergir sem inconsistência
+16. **Oportunidade é resultado calculado, não entidade**: a política pura recebe o envelope de análise e decide elegibilidade; nada é persistido. Persistir exigiria decidir expiração, deduplicação e idempotência de alerta — problemas que só existem quando houver notificação e dados reais
+17. **Classificação (Dia 9) e elegibilidade (Dia 10.1) são camadas distintas**: a política não recalcula mediana nem percentual; exige `classification = OPPORTUNITY` vinda do núcleo e acrescenta amostra maior (5 anteriores em 2 dias distintos), recência (24 h), piso absoluto por moeda e viagem não iniciada. Uma oferta pode ser `OPPORTUNITY` e não ser oportunidade
+18. **`historicalDifference` é diferença histórica observada**: mediana das observações anteriores menos o preço atual. Nunca é economia garantida, projeção futura ou recomendação de compra; a resposta carrega limitações e não expõe campo de garantia
+19. **Ranking e piso são por moeda, sem câmbio**: moedas diferentes nunca são comparadas, o limite de 10 é por moeda e uma moeda sem piso declarado é excluída (`NO_CURRENCY_FLOOR`) em vez de herdar o piso de outra. `startDate` é data de calendário (`DATE`, sem hora nem fuso): viagem com partida passada não é monitorável
 
 ---
 
@@ -214,7 +226,6 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 
 **Débitos técnicos:**
 - Sem linting/formatter
-- **Dia 9 não publicado**: a `main` local está 2 commits à frente de `origin/main`; o CI ainda não executou os testes desses commits
 - **Branch protection não confirmada**: o check do CI aparece no PR, mas exigir o job `Testes (Node 24 + PostgreSQL 17)` em Settings → Branches (para bloquear merge automaticamente) depende de configuração no GitHub não verificável por API sem autenticação
 - Sem CORS/rate limit (API escuta em `0.0.0.0` no dev)
 - Credenciais triviais do banco no compose (aceitável só para dev local)
@@ -262,9 +273,9 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 npm install          # já roda prisma generate (postinstall)
 docker compose up -d # banco na porta 5433
 cp .env.example .env
-npm test             # 64 testes, requer banco ativo
+npm test             # 95 testes, requer banco ativo
 npm run dev          # servidor com recarga
 curl http://localhost:3000/health → {"status":"ok","service":"trippulse-api"}
 ```
 
-> **Snapshot atual**: API com 8 endpoints, 3 tabelas, 64 testes automatizados (40 do Dia 9 commitados em `29dca01`/`8a85392`, não publicados), 0 bugs abertos, próximos passos claros (monitoramento → origem no Trip → OpenAPI).
+> **Snapshot atual**: API com 9 endpoints, 3 tabelas, 95 testes automatizados (40 do Dia 9 publicados em `fdfb7a7`, CI verde; 31 do Dia 10.1 ainda não commitados), 0 bugs abertos, próximos passos claros (monitoramento → origem no Trip → OpenAPI).

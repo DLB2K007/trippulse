@@ -1,6 +1,7 @@
 # Relatório de continuidade — TripPulse
 
-> Atualizado em 2026-11-08, com o **Dia 10.1 commitado em `c3eb0c3`** e o **Dia 10.2 (duracões da auditoria) commitado logo após**. `main` sincronizada com `origin/main` após o último push. Cobre os **Dias 1 a 10.2**. O CI validou o Dia 9 em `fdfb7a7` (run `42520790068`, verde).
+> Atualizado em 2026-11-09. Cobre os **Dias 1 a 11.4**: o **Dia 11.3 está commitado em `46acf4a`**; o **Dia 11.4 está no working tree, sem commit** (não existe hash). `main` sincronizada com `origin/main` em `46acf4a`.
+> O CI validou o Dia 9 em `fdfb7a7` (run `42520790068`, verde); os Dias 11.1/11.2/11.3 estão publicados em `origin/main` (11.3 em `46acf4a`). Apenas o Dia 11.4 ainda não tem commit.
 > Em 2026-11-08 o histórico foi reescrito para corrigir a autoria: todos os 14 commits agora são `DLB2K007 <danielbordini027@gmail.com>`. Os hashes citados neste relatório já são os novos; os antigos não existem mais na `main`.
 > Documento de contexto oficial do projeto: **`docs/contexto.md`** (o usuário pode referir-se a ele por outros nomes, como "PROJECT_CONTEXT.md" — é sempre este arquivo).
 > Versões anteriores deste relatório cobrem o estado até o Dia 5 (commit `9605f03`).
@@ -9,7 +10,7 @@
 
 ## 1. Resumo executivo
 
-Em 9 dias incrementais, o TripPulse saiu de documento vazio para um **backend funcional ponta a ponta com suíte de testes**:
+Ao longo de 11 dias incrementais, o TripPulse saiu de documento vazio para um **backend funcional ponta a ponta com suíte de testes**:
 
 **Dia 1** — Repositório Git, Node.js com ES Modules, Fastify, variáveis de ambiente, `.gitignore`, README e `GET /health` (commit `66dc92f`).
 
@@ -42,7 +43,14 @@ Em 9 dias incrementais, o TripPulse saiu de documento vazio para um **backend fu
 
 - **11.1 — Núcleo puro (`908a851`)**: `modules/monitoring/monitoring-core.js` com `runMonitoringCycle({trips, search, opportunities, now})` — seleção de viagens monitoráveis **reutilizando** `evaluateTripActive` (export aditivo em `opportunity-policy.js`: a regra é uma só, nunca importada de memória), pesquisa + oportunidades sequenciais por viagem, falha isolada por viagem com estágio (`SEARCH`/`OPPORTUNITIES`), contabilização fechada, vocabulários congelados (`MONITORING_ITEM_STATUS`, `MONITORING_FAILURE_STAGE`, `MONITORING_SKIP_REASON`), sem banco/HTTP/relógio. 12 testes unitários sem banco.
 - **11.2 — Execução manual (`34e9135`)**: `monitoring.service.js` (`startMonitoringRun` com lock in-process setado sincronicamente antes do primeiro `await` + liberação em `finally` + dependências injetáveis com defaults de produção) e `monitoring.routes.js` (`POST /monitoring/runs`, schema fechado verificado empiricamente no Fastify 5: POST sem body chega como `null` → body `object|null`, `maxProperties: 0`). Reutiliza integramente `searchFlightsForTrip`, `listTripOpportunities` e `listTrips` — nada duplicado. `GET` deliberadamente ausente (sem persistência ainda). 6 testes de integração. O script `test` ganhou `--test-concurrency=1`: causa raiz documentada de flakiness — arquivos de teste do node:test rodam em paralelo sobre o único PostgreSQL e a corrida entre arquivos (colisão com `opportunities-endpoint.test.js`) foi eliminada executando arquivos sequencialmente.
-- **11.3 — Persistência de execuções (working tree, pendente de commit)**: migration `20261109131507_add_monitoring_runs` (model `MonitoringRun` in edice parcial único Postgres `monitoring_runs_one_running_key` em `status = 'RUNNING'` — árbitro de concorrência **entre processos**; o lock in-process permanece como fast path). `startMonitoringRun` cria a linha RUNNING (P2002 → 409 **só** quando comprovadamente deste índice; obtido em `meta.driverAdapterError.cause.constraint.index` no Prisma 7 + adapter-pg, pois `meta.target` clássico não vem), executa o núcleo intocado e finaliza **sempre** no desfecho: `COMPLETED` (com contagens e itens do relatório) ou `FAILED` (ciclo abortou — falha global; falha por viagem segue sendo dado do relatório, não status). `POST /monitoring/runs` evoluiu para devolver o registro persistido (mudança de contrato documentada); `GET /monitoring/runs` devolve o histórico real (mais recentes primeiro, `limit` 1–100 default 20, sem dado fictício). 10 testes de integração/persistência (05 do 11.2 evoluídos + 4 novos).
+- **11.3 — Persistência de execuções (`46acf4a`)**: migration `20261109131507_add_monitoring_runs` (model `MonitoringRun` com índice parcial único no Postgres `monitoring_runs_one_running_key` em `status = 'RUNNING'` — árbitro de concorrência **entre processos**; o lock in-process permanece como fast path). `startMonitoringRun` cria a linha RUNNING (P2002 → 409 **só** quando comprovadamente deste índice; obtido em `meta.driverAdapterError.cause.constraint.index` no Prisma 7 + adapter-pg, pois `meta.target` clássico não vem),  executa o núcleo intocado e finaliza **sempre** no desfecho: `COMPLETED` (com contagens e itens do relatório) ou `FAILED` (ciclo abortou — falha global; falha por viagem segue sendo dado do relatório, não status). `POST /monitoring/runs` evoluiu para devolver o registro persistido (mudança de contrato documentada); `GET /monitoring/runs` devolve o histórico real (mais recentes primeiro, `limit` 1–100 default 20, sem dado fictício). 10 testes de integração/persistência (05 do 11.2 evoluídos + 4 novos).
+
+**Dia 11.4 — Agendador automático (working tree, sem commit):**
+
+- **Fase A — agendador + configuração**: `modules/monitoring/scheduler.js` com after-complete loop (nunca `setInterval`), primeiro ciclo só após o intervalo completo (D1), no máximo um timer e uma cadeia por instância, `stop()` durante ciclo em voo sem abortar o ciclo. `env.js` passa a expor `monitoringScheduler` com `MONITORING_SCHEDULER_ENABLED` estrito (default **OFF**) e `MONITORING_SCHEDULER_INTERVAL_MS` inteiro entre 60000 e 86400000 ms (default 900000), com fail-fast apenas quando o agendador está ativo. 18 testes do scheduler (17 unitários sem tempo real + 1 de integração com `trigger: SCHEDULED`) e 11 de ambiente.
+- **Fase B — wiring ao bootstrap**: `server.js` ganhou `startServer(deps)` injetável; o scheduler é criado e iniciado **somente após** `listen()` bem-sucedido, handlers de sinal são registrados uma única vez e o shutdown idempotente executa `scheduler.stop()` → `await scheduler.idle()` → `await app.close()` → `terminate(0)`. `buildApp()` permanece intocado e nunca ativa o scheduler. 13 testes de bootstrap.
+- **Fase B.1 — hardening da revisão independente**: M1 (stop→start com ciclo em voo não duplica timers; `cycleRunning` separado da promessa do `idle()` cobre também tick que falha antes do primeiro `await`), M2 (parsing estrito rejeita `60000abc`, `60000.9`, `60000 0`), M3 (helper de ambiente isola/restaura `PORT`, `HOST` e variáveis do scheduler), L1 (log de início dentro do `try`; falha de logger não mata a cadeia nem gera `unhandledRejection`), L2 (falha pós-listen executa `scheduler.stop()` + `app.close()` + exit 1 com log próprio, sem rotular como falha de listen) e L4 (config lida antes de criar a aplicação). 8 testes novos; suíte em 167.
+- **Fase C — documentação, auditoria final e validação integrada**: README (agendador, defaults, D1, persistência e shutdown), `.env.example` (as duas variáveis, com scheduler desligado) e este relatório. Auditoria integral sem defeito funcional novo (duas imprecisões documentais corrigidas no código) e validação: **167/167 em 3 rodadas**, mais 2 rodadas com `PORT`/`HOST` poluídos; smoke OFF real (`/health` 200, sem scheduler) e smoke ON real com intervalo mínimo configurado de 60000 ms: o primeiro ciclo ocorreu **60.210 ms após o boot** (sessenta mil duzentos e dez milissegundos), equivalentes a **60,21 s** (1 minuto e 0,21 s) — nenhum ciclo antes dos 60 s, `MonitoringRun` persistido com `trigger: SCHEDULED`, shutdown gracioso e zero ciclos nos 65 s seguintes ao stop.
 
 ---
 
@@ -61,7 +69,7 @@ Em 9 dias incrementais, o TripPulse saiu de documento vazio para um **backend fu
 | Identificação determinística de oportunidades | ✅ Implementado e testado (Dias 10.1 e 10.2, commitados) |
 | Monitoramento — núcleo puro do ciclo | ✅ Implementado e testado (Dia 11.1) |
 | Monitoramento — execução manual (POST) | ✅ Implementado e testado, com persistência e histórico (Dias 11.2–11.3) |
-| Monitoramento — agendador (execuções programadas) | ⏳ Dia 11.4 (trigger `SCHEDULED` já suportado pelo schema) |
+| Monitoramento — agendador (execuções programadas) | ✅ Implementado e testado (Dia 11.4, working tree; OFF por padrão) |
 | Integração **real** com provedores | ❌ Não iniciado (bloqueado por decisão de escopo do MVP) |
 | Agente de IA / recomendações | ❌ Não iniciado |
 | Notificações, hotéis, veículos, atividades; publicação | ❌ Não iniciado |
@@ -84,7 +92,7 @@ Em 9 dias incrementais, o TripPulse saiu de documento vazio para um **backend fu
 trippulse/
 ├── apps/api/src/
 │   ├── config/
-│   │   ├── env.js            # carrega/valida PORT e HOST (defaults)
+│   │   ├── env.js            # carrega/valida PORT, HOST e config do scheduler (defaults)
 │   │   └── prisma.js         # instância única de PrismaClient (adapter-pg)
 │   ├── modules/
 │   │   ├── trips/            # CRUD de viagens
@@ -92,7 +100,7 @@ trippulse/
 │   │   ├── offers/           # domínio de ofertas: identidade, snapshot, histórico
 │   │   ├── analysis/         # price-metrics.js (puro) + service/rota de análise
 │   │   ├── opportunities/    # política pura + service/rota de oportunidades
-│   │   └── monitoring/       # monitoring-core.js (puro) + service (lock+persistência)/roteamento
+│   │   └── monitoring/       # núcleo puro + service (lock+persistência)/rotas + scheduler.js (quando disparar)
 │   ├── integrations/
 │   │   └── flight-providers/
 │   │       ├── index.js      # registro de provedores (único ponto de extensão)
@@ -102,11 +110,11 @@ trippulse/
 │   │   ├── errors.js         # HttpError(statusCode, message)
 │   │   └── uuid.js           # isUuid()
 │   ├── app.js                # monta Fastify + /health + plugins no prefixo /trips
-│   └── server.js             # bootstrap
+│   └── server.js             # bootstrap: listen → scheduler → handlers → shutdown gracioso
 ├── docs/ (contexto.md, relatorio-continuidade.md)
 ├── prisma/ (schema.prisma + 3 migrations)
 ├── prisma.config.ts          # conexão do CLI (tolerante a .env ausente)
-├── tests/ (12 arquivos, 125 testes)
+├── tests/ (15 arquivos, 167 testes)
 ├── docker-compose.yml · .env.example · README.md · package.json
 ```
 
@@ -158,6 +166,17 @@ POST /monitoring/runs
 
 GET /monitoring/runs?limit=20
   → leitura EXCLUSIVA do banco: execuções, mais recentes primeiro (limit 1–100)
+
+Agendador (MONITORING_SCHEDULER_ENABLED=true)
+  → start() SOMENTE após listen bem-sucedido: agenda o 1º tick APÓS o intervalo
+  → tick: startMonitoringRun({ trigger: SCHEDULED }) → persistência do run
+  → finally: somente então agenda o próximo (after-complete, sem sobreposição)
+  → 409 de ciclo concorrente = skip com log .info; erro = log .error + reagenda
+
+SIGTERM/SIGINT
+  → scheduler.stop() (cancela o timer; nenhum ciclo NOVO)
+  → await scheduler.idle() (ciclo em voo termina, não é abortado)
+  → await app.close() → terminate(0); sinais repetidos = mesma promessa
 ```
 
 **Padrão canônico de oferta** (definido em `normalize.js`): `{ provider, isSimulated, dataClassification, type, route, dates, flight, price, relatedQuery }` + `history: { observedAt, current, previous, best, trend }`.
@@ -208,7 +227,8 @@ monitoring_runs (MonitoringRun)  — sem FK: registro operacional, independente 
 | 10.2 | **Correções da auditoria**: `opportunity-policy.js` (piso fail-closed com `Object.hasOwn`; `startDate` com ida-e-volta de calendário), `opportunities.service.js` (`distinctDaysBeforeCurrent` espelhando o núcleo, exportada pura), `flights.service.js` (400 para id não-UUID), `tests/{opportunities-policy,api}.test.js` (+3 regressões), `tests/opportunities-days.test.js` (novo, 5), README (3 alinhamentos), este relatório |
 | 11.1 (`908a851`) | `modules/monitoring/monitoring-core.js` (novo), `tests/monitoring-core.test.js` (novo, 12), `opportunity-policy.js` (export aditivo de `evaluateTripActive`, +6/−1). **Sem migration e sem dependência nova.** |
 | 11.2 (`34e9135`) | `modules/monitoring/{monitoring.service,monitoring.routes}.js` (novos), `app.js` (registro em `/monitoring`), `tests/monitoring-endpoint.test.js` (novo, 6), `package.json` (script `test` com `--test-concurrency=1`). **Sem migration e sem dependência nova.** |
-| 11.3 (pendente) | `migration 20261109131507_add_monitoring_runs` (nova, com índice parcial único manual), `schema.prisma` (model `MonitoringRun`), `monitoring.service.js` (persistência + árbitro), `monitoring.routes.js` (GET + POST evoluído), `tests/monitoring-endpoint.test.js` (10 testes), README (seção `/monitoring`), este relatório. **Dependência nova: nenhuma.** |
+| 11.3 (`46acf4a`) | `migration 20261109131507_add_monitoring_runs` (nova, com índice parcial único manual), `schema.prisma` (model `MonitoringRun`), `monitoring.service.js` (persistência + árbitro), `monitoring.routes.js` (GET + POST evoluído), `tests/monitoring-endpoint.test.js` (10 testes), README (seção `/monitoring`), este relatório. **Dependência nova: nenhuma.** |
+| 11.4 (working tree, sem commit) | `modules/monitoring/scheduler.js` (novo), `config/env.js` (config do scheduler), `server.js` (startServer + wiring + shutdown; Fase B.1), `tests/{monitoring-scheduler,env,server-bootstrap}.test.js` (novos, 18/11/13), `README` (agendador), `.env.example` (2 variáveis), este relatório. **Sem migration, sem dependência nova e sem mudança de escopo do ciclo.** |
 
 **Scripts npm atuais**: `start` · `dev` (`--watch`) · `start:no-env` · `db:migrate` (`migrate dev && generate`) · `db:deploy` (= `prisma migrate deploy`, também usado no CI) · `postinstall` (`prisma generate`) · `test` (`node --env-file=.env --test --test-force-exit --test-concurrency=1` — arquivos sequenciais porque todos compartilham o mesmo PostgreSQL).
 
@@ -216,7 +236,7 @@ monitoring_runs (MonitoringRun)  — sem FK: registro operacional, independente 
 
 ## 6. Testes
 
-**125/125 passando** (arquivos sequenciais — ver Decisão 22): estado do Dia 11.3:
+**167/167 passando** (arquivos sequenciais — ver Decisão 22): estado do Dia 11.4 (working tree). Três rodadas completas e duas rodadas com `PORT`/`HOST` exportados no shell, todas verdes.
 
 | Arquivo | Testes | O que protege |
 |---|---|---|
@@ -231,6 +251,9 @@ monitoring_runs (MonitoringRun)  — sem FK: registro operacional, independente 
 | `tests/opportunities-endpoint.test.js` | 5 | endpoint com fixtures determinísticas: 400/404 e rejeição de querystring; viagem sem ofertas; real × simulada × sem queda (motivos e contagens); lista vazia quando só há simulados; repetibilidade, ausência de escrita e contratos de `/analysis` e `/offers/history` preservados |
 | `tests/opportunities-days.test.js` | 5 | redução pura de dias distintos: regressão da linha final inválida (não conta o dia do `current` como histórico), linhas inutilizáveis descartadas antes de eleger o `current`, entrada nula/vazia/sem histórico, `observedAt` inválido em qualquer posição |
 | `tests/monitoring-core.test.js` | 12 | núcleo puro do ciclo: viagem iniciando hoje/executável, futura, inativa sem chamadas, nenhuma monitorável, lista vazia, contagem de oportunidades, falha isolada de pesquisa (oportunidades não chamadas), falha isolada de oportunidades (pesquisa conta), múltiplas misturadas com contagens fechadas, determinismo, imutabilidade+freeze, dependências/`now` inválidos (fail alto, zero chamadas) |
+| `tests/env.test.js` | 11 | config do agendador: default OFF/900000; boolean estrito (`true`/`1`; `yes`/`sim` desativam com `warn`); intervalo inválido ignorado com OFF e fail-fast com ON; fronteiras 60000/86400000; **M2: rejeita `60000abc`, `60000.9`, `60000 0`**; **M3: isola e restaura `PORT`/`HOST`, sem vazamento do shell** |
+| `tests/monitoring-scheduler.test.js` | 18 | agendador: timer único e idempotente; D1 (nada antes do intervalo); after-complete sem sobreposição; 409 como skip; erro genérico não para a cadeia; stop em voo; `idle()`; logs sem duplicação; **M1: stop→start em voo mantém uma cadeia e zero timers no stop final**; **borda: tick que falha antes do 1º `await` não deixa ciclo fantasma**; **L1: logger quebrado não mata a cadeia nem gera `unhandledRejection`**; integração real: `defaultScheduledRun` grava `trigger: SCHEDULED` |
+| `tests/server-bootstrap.test.js` | 13 | bootstrap: OFF nunca cria scheduler; ON inicia só após `listen` e usa o logger do Fastify; listen falhando → exit 1 sem factory/handlers; **L2: falha pós-listen (factory ou handlers) → stop + close + exit 1 com log da fase**; **L4: env incompleto falha antes de `createApplication`**; SIGTERM/SIGINT mesma sequência; shutdown idempotente; `close()` aguarda ciclo em voo; falha de `close`; `buildApp` real em porta 0; factory real com relógio falso |
 | `tests/monitoring-endpoint.test.js` | 10 | persistência: POST grava run COMPLETED refletindo relatório (linha verificada no banco); POST valida body/query ({} ok); GET histórico real com ordem decrescente e limit; GET valida limit; **árbitro: RUNNING de outro processo → 409 e nenhuma segunda linha RUNNING**; 200+409 simultâneos com lock liberado depois; falha isolada por viagem com run COMPLETED; **ciclo abortado → run FAILED, finishedAt gravado, nenhum RUNNING órfão**; concorrência in-process (1 ciclo, 1 rejeição, 1 pesquisa); trigger fora do vocabulário → TypeError sem criar linha |
 
 Histórico dos testes manuais (Dias 1–5) está documentado como superseded pela suíte. Falhas encontradas durante o desenvolvimento foram todas corrigidas e viraram regressões quando aplicável.
@@ -263,6 +286,10 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 22. **Arquivos de teste rodando sequencialmente** (`--test-concurrency=1`): o `node:test` roda arquivos em paralelo sobre o único Postgres de dev e o ciclo de monitoramento (que escreve em **todas** as viagens ativas) colidia com fixtures de outros arquivos — a flakiness observada em `opportunities-endpoint.test.js:258` tinha essa causa. Testes internos a um arquivo continuam sequenciais por padrão do runner
 23. **Persistência reflete o núcleo, nunca o duplica (Dia 11.3)**: a linha `MonitoringRun` grava exatamente o relatório de `runMonitoringCycle` (contagem fechada, itens congelados em JSONB) e a derivação de `status` COMPLETED/FAILED é a decisão deferida do 11.1 — `FAILED` só para aborto global; falha por viagem é `items[].status = FAILED` e a execução segue COMPLETED. `trigger` MANUAL/SCHEDULED fecha o vocabulário **antes** do agendador (Dia 11.4) para não exigir migration nova
 24. **POST /monitoring/runs evoluiu de contrato no 11.3** (relatório puro → registro persistido com `runId`/`status`/janela): mudança única, documentada no README e nos testes — o histórico anterior não existia, não há compatibilidade a preservar
+25. **Agendador é after-complete, nunca `setInterval` (Dia 11.4)**: agenda → executa → só no `finally` agenda o próximo. Por construção o próprio scheduler não sobrepõe ciclos (intervalo real = duração + intervalo) e a concorrência entre processos continua no índice parcial único (`409` → skip com log `.info`, sem alarme). O primeiro tick nasce somente após o intervalo completo (D1): deploy/reinício não dispara ciclo imediato
+26. **Scheduler OFF por padrão e config fail-fast (Dia 11.4)**: `MONITORING_SCHEDULER_ENABLED` só aceita `true`/`1` (resto desativa; valor não reconhecido avisa); `MONITORING_SCHEDULER_INTERVAL_MS` é inteiro 60000–86400000 (default 900000), com parsing **estrito** (não `parseInt`) e `TypeError` no boot apenas quando o agendador está ativo e o valor presente é inválido. Com OFF a invalidade é irrelevante e cai no default — nunca “scheduler silenciosamente ligado com 1 ms”
+27. **Wiring só depois do `listen`; shutdown gracioso e idempotente (Dia 11.4)**: o scheduler nasce após a porta abrir (falha de listen não cria timers/handlers) e o encerramento é `stop()` (corta a cadeia) → `idle()` (espera o ciclo em voo, sem abortar) → `close()` → `terminate(0)`; sinais repetidos compartilham a mesma promessa. Falha **pós-listen** tem tratamento próprio: log da fase, `stop()`, `close()` e exit 1. `buildApp()` permanece sem scheduler — testes HTTP nunca disparam ciclos
+28. **Hardening B.1 (Dia 11.4)**: uma única cadeia por instância, com `cycleRunning` (verdade sobre ciclo em curso) separada de `inFlight` (promessa do `idle()`) — cobre stop→start em voo e tick que falha antes do primeiro `await`; log de início dentro do `try` e `catch` na promessa do idle, de modo que logger quebrado não mata a cadeia nem gera `unhandledRejection`; testes de ambiente isolam `PORT`/`HOST` (a suíte não depende do shell)
 
 ---
 
@@ -278,7 +305,6 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 **Funcionalidades incompletas (planejadas, não implementadas):**
 - Campo de **origem** no Trip (pesquisa usa origem fictícia do simulador)
 - Análise limitada a uma oferta por vez, sem comparação entre ofertas/provedores, sem recorde/queda acumulada e sem janela temporal
-- **Agendador do monitoramento (Dia 11.4)**: o ciclo, a execução manual e a persistência existem; falta o disparo programado (`trigger: SCHEDULED` já suportado pelo schema — sem migration nova)
 - Agente de IA, notificações, hotéis/veículos/atividades, provedores reais, publicação
 
 **Limitações conhecidas da análise (documentadas na resposta):**
@@ -293,13 +319,18 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 - Se o banco cair **exatamente na finalização**, a linha pode ficar RUNNING (a `INSERT` de UPDATE de desfecho falhou e o erro original é preservado deliberadamente). É risco registrado, não bug: exige indisponibilidade do banco no meio da execução; o índice parcial garante que um novo ciclo informará 409 até a linha ser limpa manualmente.
 - Sem alerta de execução FAILED/órfã (notificações pertencem a outro escopo).
 
+**Riscos e dívidas documentados do agendador (Dia 11.4):**
+- **Shutdown sem timeout (L3, fora do escopo por decisão)**: `idle()` aguarda o ciclo em voo sem prazo; um ciclo travado retém o processo até o SIGKILL do orquestrador. Se o banco cair no meio, a linha pode ficar `RUNNING` (mesmo risco do 11.3) e bloquear ciclos seguintes com 409 até limpeza manual. Opções futuras: grace period configurável (barato, mas não cancela o run), `AbortController` atravessando service/provedores (mudança estrutural) e recuperação de `RUNNING` órfão no boot (migration/consulta nova). Nenhuma foi implementada
+- **Listeners de sinal não são removidos e `app.close()` externo não para o scheduler (L4)**: hoje não há caminho concreto (um bootstrap por processo; o scheduler só nasce em `startServer`). Se o bootstrap for reutilizado no mesmo processo, convém guardar/remover handlers e adicionar hook `onClose` ou `dispose()`
+- **Sinais de SO reais não são exercitáveis neste Windows/Git Bash**: `timeout`/`kill` entregam TerminateProcess; a lógica é coberta com `EventEmitter` injetado e chamada direta de `shutdown()`, e o smoke ON real encerra pela função retornada. Validação de SIGTERM real fica para Linux/CI
+
 ---
 
 ## 9. Próximas etapas (ordem recomendada)
 
 | Ordem | Tarefa | Dependência |
 |---|---|---|
-| 1 | **Agendador do monitoramento (Dia 11.4)** — disparo programado do ciclo já existente com `trigger: SCHEDULED` (núcleo, execução manual e persistência prontos; sem migration) | Dias 11.1–11.3 |
+| 1 | **Revisão e commit do Dia 11.4** (agendador + hardening + documentação) — working tree pronto, sem hash | Dias 11.1–11.3 |
 | 2 | Campo de origem no Trip (migration + input + query) | nada |
 | 3 | OpenAPI/Swagger formal | qualquer momento |
 | 4 | Provedor real (remover barreira anti-`REAL` com decisão explícita) | 1–3 maduros + credenciais de provedor |
@@ -309,7 +340,7 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 
 ## 10. Instruções para retomada
 
-**Leia antes de implementar**: `docs/contexto.md` (requisitos e regras) · `apps/api/src/app.js` · `modules/flights/flights.service.js` · `modules/offers/offers.service.js` · `modules/analysis/price-metrics.js` (cabeçalho com critérios, arredondamento e limitações) · `modules/analysis/analysis.service.js` · `modules/monitoring/monitoring-core.js` (núcleo puro do ciclo + contrato) · `modules/monitoring/monitoring.service.js` (lock + árbitro + persistência) · `integrations/flight-providers/index.js` + `normalize.js` · `prisma/schema.prisma`.
+**Leia antes de implementar**: `docs/contexto.md` (requisitos e regras) · `apps/api/src/app.js` · `modules/flights/flights.service.js` · `modules/offers/offers.service.js` · `modules/analysis/price-metrics.js` (cabeçalho com critérios, arredondamento e limitações) · `modules/analysis/analysis.service.js` · `modules/monitoring/monitoring-core.js` (núcleo puro do ciclo + contrato) · `modules/monitoring/monitoring.service.js` (lock + árbitro + persistência) · `modules/monitoring/scheduler.js` (after-complete, single chain, `idle()`) · `server.js` (`startServer`, wiring pós-listen, shutdown) · `config/env.js` (scheduler OFF/fail-fast) · `integrations/flight-providers/index.js` + `normalize.js` · `prisma/schema.prisma`.
 
 **Não alterar sem necessidade**: `docs/contexto.md` · porta 5433 (PostgreSQL nativo do Windows na 5432) · barreira anti-`REAL` · estado JS ESM puro (sem TS/tsx) · contrato de provedores.
 
@@ -321,9 +352,9 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 npm install          # já roda prisma generate (postinstall)
 docker compose up -d # banco na porta 5433
 cp .env.example .env
-npm test             # 125 testes, requer banco ativo
+npm test             # 167 testes, requer banco ativo
 npm run dev          # servidor com recarga
 curl http://localhost:3000/health → {"status":"ok","service":"trippulse-api"}
 ```
 
-> **Snapshot atual**: API com 12 endpoints, 4 tabelas, 125 testes automatizados (0 abertos; estilos Dia 1–10 e Dia 11.1–11.2 validados pelo CI — o 11.3 sobe no próximo push; Dias 11.1/11.2 publicados em runs verdes), primeiros passos claros (agendador 11.4 → origem no Trip → OpenAPI).
+> **Snapshot atual**: API com 12 endpoints, 4 tabelas, **167 testes automatizados em 15 arquivos** (0 abertos; Dias 1–10 e 11.1–11.2 validados pelo CI, 11.3 publicado em `origin/main` (`46acf4a`)). O **Dia 11.4 está no working tree, sem commit** (agendador automático, shutdown gracioso, hardening B.1 e esta documentação). Próximos passos: revisar/commitar o 11.4 → origem no Trip → OpenAPI.

@@ -19,10 +19,11 @@ Projeto em construção da **fundação backend** (primeira etapa). Atualmente e
 - **Oportunidades de compra** (`GET /trips/:tripId/opportunities`): identificação determinística sobre a análise, com portões de elegibilidade, motivo explícito para cada exclusão, ranking separado por moeda e diferença histórica observada (não economia garantida).
 - **Suíte de testes automatizados** (`npm test`, runner nativo do Node com `app.inject()`).
 - **CI no GitHub Actions**: testes rodados a cada push na `main` e em pull requests, com PostgreSQL efêmero.
+- **Agendador automático do monitoramento** (Dia 11.4): executa o ciclo com `trigger: SCHEDULED` em intervalo configurável, **desativado por padrão**, com encerramento gracioso e ciclos persistidos.
 
 [![CI](https://github.com/DLB2K007/trippulse/actions/workflows/ci.yml/badge.svg)](https://github.com/DLB2K007/trippulse/actions/workflows/ci.yml)
 
-Funcionalidades futuras (provedores reais, agente de IA, monitoramento programado) ainda **não** estão implementadas.
+Funcionalidades futuras (provedores reais, agente de IA, notificações) ainda **não** estão implementadas.
 
 ## Stack
 
@@ -38,7 +39,7 @@ npm test    # requer o banco ativo (docker compose up -d)
 ```
 
 - Executor: `node --test` nativo (sem dependências de teste), chamadas pela Fastify `app.inject()` — não abre porta.
-- Cobertura atual: validação e regras do CRUD; normalização para o padrão canônico e a barreira anti-`REAL`; identidade/`externalKey` da oferta; snapshot do histórico (`FIRST_OBSERVATION` → `UNCHANGED`) e `best`; cascade de exclusão; regressão da validade das datas do provedor simulado; métricas puras de preço (limiares, mediana sem o preço atual, arredondamento, limites numéricos); endpoint de análise (`404`/`400`, viagem sem ofertas, classificações, dados simulados, repetibilidade); políticas de oportunidade (portões, motivos de exclusão, piso absoluto, recência, ranking por moeda, determinismo) e seu endpoint.
+- Cobertura atual: validação e regras do CRUD; normalização para o padrão canônico e a barreira anti-`REAL`; identidade/`externalKey` da oferta; snapshot do histórico (`FIRST_OBSERVATION` → `UNCHANGED`) e `best`; cascade de exclusão; regressão da validade das datas do provedor simulado; métricas puras de preço (limiares, mediana sem o preço atual, arredondamento, limites numéricos); endpoint de análise (`404`/`400`, viagem sem ofertas, classificações, dados simulados, repetibilidade); políticas de oportunidade (portões, motivos de exclusão, piso absoluto, recência, ranking por moeda, determinismo) e seu endpoint; agendador (timer único, after-complete, stop/start, `idle()`, 409 como skip, falha de logger); bootstrap (wiring só após `listen()`, shutdown idempotente, falhas de listen × pós-listen); parsing/isolamento das variáveis de ambiente.
 
 ## CI
 
@@ -76,12 +77,13 @@ trippulse/
 │           │   ├── flights/ # Pesquisa de passagens de uma viagem
 │           │   ├── offers/  # Persistência de ofertas e histórico de preços
 │           │   ├── analysis/ # Métricas puras + análise consolidada por viagem
-│           │   └── opportunities/ # Política determinística de oportunidades
+│           │   ├── opportunities/ # Política determinística de oportunidades
+│           │   └── monitoring/    # Núcleo puro, service/rotas e agendador (scheduler.js)
 │           ├── integrations/# Provedores externos
 │           │   └── flight-providers/  # registro + provedor simulado + normalização
 │           ├── shared/      # Código compartilhado
 │           ├── app.js       # Montagem da aplicação e rotas
-│           └── server.js    # Inicialização do servidor
+│           └── server.js    # Bootstrap: listen + wiring do agendador + shutdown gracioso
 ├── docs/                    # Documentação do projeto
 ├── prisma/
 │   ├── schema.prisma        # Modelagem do banco de dados
@@ -114,7 +116,7 @@ trippulse/
    cp .env.example .env
    ```
 
-   Edite o `.env` se necessário (padrões: `PORT=3000`, `HOST=0.0.0.0`, `DATABASE_URL` apontando para `localhost:5433`).
+   Edite o `.env` se necessário (padrões: `PORT=3000`, `HOST=0.0.0.0`, `DATABASE_URL` apontando para `localhost:5433`). O agendador automático fica **desativado** (`MONITORING_SCHEDULER_ENABLED=false`); para ligá-lo, veja a seção do agendador.
 
 4. Aplique as migrations do banco:
 
@@ -503,3 +505,26 @@ Contratos e regras:
 - **Concorrência:** é proibida em dois níveis — lock in-process (mesmo processo) **e** índice parcial único do Postgres em `status = 'RUNNING'` (processos/workers diferentes). A segunda tentativa recebe `409` com "Já existe uma execução de monitoramento em andamento." A liberação é garantida em `finally`, inclusive em falha: **nenhum `RUNNING` fica órfão** em falhas normais de execução.
 - **Cada ciclo real escreve no banco:** pesquisa cria/atualiza ofertas `SIMULATED` e grava observações em `price_history` — o resultado de oportunidades continua **vazio por construção** com o único provedor atual.
 - `GET` não aceita filtro além de `limit` e só devolve execuções **persistidas de verdade** — sem dado fictício (`?force=1` → `400`).
+
+### Agendador automático de monitoramento
+
+O ciclo também pode rodar sozinho. O agendador executa `startMonitoringRun` com `trigger: SCHEDULED` e **vem desativado por padrão** — nada roda no boot nem em `buildApp()`; quem liga é `loadEnv()`.
+
+| Variável | Default | Efeito |
+|---|---|---|
+| `MONITORING_SCHEDULER_ENABLED` | `false` | Só `true` ou `1` ativam; qualquer outro valor desativa (valor não reconhecido gera `warn`). |
+| `MONITORING_SCHEDULER_INTERVAL_MS` | `900000` | Inteiro entre `60000` (1 min) e `86400000` (24 h). Ausente usa o default; presente e inválido com o agendador ativo falha o boot (`TypeError`). |
+
+Comportamento:
+
+- **Primeiro ciclo somente após o intervalo completo** — subir ou reiniciar o processo não dispara ciclo imediato.
+- **Sem sobreposição no mesmo processo**: o próximo tick só é agendado **depois** que o ciclo corrente termina (`after-complete`); o intervalo real entre ciclos é `duração + intervalo` e um ciclo lento nunca é atropelado. Entre processos, o índice parcial único de `monitoring_runs` continua sendo o árbitro (o ciclo concorrente é ignorado com `409` e log `.info`).
+- **Ciclos são persistidos**: cada execução automática grava uma linha `MonitoringRun` com `trigger: SCHEDULED` e o resultado do ciclo (contagens, itens, `COMPLETED`/`FAILED`) — visível no mesmo `GET /monitoring/runs`.
+- **Shutdown gracioso** (`SIGTERM`/`SIGINT`): cancela o timer pendente (nenhum ciclo novo começa), aguarda o ciclo **em voo** terminar — sem abortá-lo — e só então fecha o servidor; sinais repetidos compartilham o mesmo encerramento. Não há timeout de shutdown: um ciclo travado retém o processo (dívida técnica registrada no relatório de continuidade).
+- **Erros não derrubam o agendador**: falha de um ciclo é logada e o próximo tick é reagendado; falha de logger também não interrompe a cadeia nem gera `unhandledRejection`.
+
+```bash
+# ligar o agendador em um .env local (exemplo)
+MONITORING_SCHEDULER_ENABLED=true
+MONITORING_SCHEDULER_INTERVAL_MS=900000
+```

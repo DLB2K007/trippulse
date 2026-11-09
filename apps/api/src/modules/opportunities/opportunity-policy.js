@@ -259,7 +259,19 @@ function toDateOnly(value) {
 
   const text = value.slice(0, 10);
 
-  return DATE_ONLY_PATTERN.test(text) ? text : null;
+  if (!DATE_ONLY_PATTERN.test(text)) {
+    return null;
+  }
+
+  // O padrão regex aceita mês/dia impossíveis ("2027-13-45"). A ida-e-volta por
+  // calendário UTC fecha essa brecha: datas que não existem não geram roundtrip
+  // idêntico e a viagem é tratada como não ativa (fail-closed).
+  const calendarDay = new Date(`${text}T00:00:00Z`);
+  const roundtrip = Number.isFinite(calendarDay.getTime())
+    ? calendarDay.toISOString().slice(0, 10)
+    : null;
+
+  return roundtrip === text ? text : null;
 }
 
 // startDate é DATE no banco: o dia UTC de `now` é a referência, sem hora.
@@ -428,15 +440,21 @@ function evaluateOffer(offer, { criteria, now, observationDays, tripState }) {
     };
   }
 
-  const floorCents = criteria.minAbsoluteSavingCentsByCurrency[currency];
+  const floors = criteria.minAbsoluteSavingCentsByCurrency;
 
-  if (floorCents === undefined) {
+  // Object.hasOwn fecha o portão contra chaves herdadas do prototype
+  // ("constructor", "toString"): moeda declarada é a única fonte de piso e
+  // qualquer coisa diferente disso é exclusão (fail-closed), jamais aprovação
+  // acidental por um valor arbitrário herdado.
+  if (!Object.hasOwn(floors, currency)) {
     return {
       ok: false,
       reason: OPPORTUNITY_EXCLUSION.NO_CURRENCY_FLOOR,
       detail: `Não há piso absoluto definido para ${currency}; nenhum piso é herdado de outra moeda.`,
     };
   }
+
+  const floorCents = floors[currency];
 
   const differenceCents = medianCents - currentCents;
 

@@ -183,3 +183,12 @@ test('DELETE da viagem aplica cascade em ofertas e historicos', async () => {
   assert.equal(offers, 0);
   assert.equal(observations, 0);
 });
+
+// ---------- Regressões da auditoria do Dia 10.2 ----------
+
+test('GET /trips/:tripId/flights rejeita identificador nao-UUID com 400 (nao 500 P2007)', async () => {
+  const res = await app.inject({ method: 'GET', url: '/trips/nao-um-uuid/flights' });
+
+  assert.equal(res.statusCode, 400);
+  assert.equal(res.json().message, 'O identificador da viagem precisa ser um UUID válido.');
+});

@@ -4,6 +4,7 @@
 
 import { prisma } from '../../config/prisma.js';
 import { HttpError } from '../../shared/errors.js';
+import { isUuid } from '../../shared/uuid.js';
 import { getFlightProviders } from '../../integrations/flight-providers/index.js';
 import { normalizeFlightOffer } from '../../integrations/flight-providers/normalize.js';
 import {
@@ -12,6 +13,12 @@ import {
 } from '../offers/offers.service.js';
 
 export async function searchFlightsForTrip(tripId) {
+  // Mesmo contrato dos demais recursos aninhados: id inválido é 400 de
+  // domínio, nunca um erro do Prisma (que se apresentaria como 500).
+  if (!isUuid(tripId)) {
+    throw new HttpError(400, 'O identificador da viagem precisa ser um UUID válido.');
+  }
+
   const trip = await prisma.trip.findUnique({ where: { id: tripId } });
 
   if (!trip) {

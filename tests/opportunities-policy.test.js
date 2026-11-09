@@ -490,3 +490,32 @@ test('politica padrao e devolvida na resposta, congelada em conteudo', () => {
   assert.deepEqual(result.policy.minAbsoluteSavingCentsByCurrency, { BRL: 10000 });
   assert.equal(result.policy.maxOpportunitiesPerCurrency, 10);
 });
+
+// ---------- Regressões da auditoria do Dia 10.2 ----------
+
+test('moeda que resolve chave herdada de prototype e excluida (piso fail-closed)', () => {
+  // Antes da correção, `floors['constructor']` devolvia o construtor de Object
+  // (diferente de undefined) e a oferta PASSAVA no portão do piso.
+  const offer = makeOffer({
+    analysis: {
+      currency: 'constructor',
+      current: { total: 800, currency: 'constructor', observedAt: hoursAgo(1) },
+      previous: { total: 1200, currency: 'constructor', observedAt: hoursAgo(48) },
+      historicalMedian: { total: 1000, currency: 'constructor', sampleSize: 5 },
+    },
+  });
+
+  const result = run([offer]);
+
+  assert.equal(result.opportunities.length, 0);
+  assert.deepEqual(reasonsOf(result), [OPPORTUNITY_EXCLUSION.NO_CURRENCY_FLOOR]);
+});
+
+test('startDate fora do calendario e tratada como viagem nao ativa', () => {
+  for (const startDate of ['2027-13-45', '2027-02-30']) {
+    const result = run([makeOffer()], { trip: makeTrip({ startDate }) });
+
+    assert.equal(result.opportunities.length, 0, `startDate ${startDate} virou viagem ativa`);
+    assert.deepEqual(reasonsOf(result), [OPPORTUNITY_EXCLUSION.TRIP_NOT_ACTIVE]);
+  }
+});

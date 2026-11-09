@@ -400,7 +400,7 @@ Resposta (exemplo ilustrativo; avaliou 2 ofertas, 1 elegível e 1 simulada):
     "evaluatedOfferCount": 2,
     "opportunityCount": 1,
     "excludedCount": 1,
-    "excludedByReason": { "SIMULATED_DATA": 1, "NOT_BELOW_THRESHOLD": 0 },
+    "excludedByReason": { "SIMULATED_DATA": 1, "NOT_BELOW_THRESHOLD": 0, "...": "as 13 chaves do vocabulário estão sempre presentes, mesmo com zero" },
     "currencies": ["BRL"],
     "containsSimulatedData": true
   },
@@ -437,7 +437,7 @@ Política aplicada (constantes do módulo, sem configuração por HTTP):
 
 | Portão | Critério |
 |---|---|
-| Viagem | `startDate` (data de calendário) ainda não passou; viagem que começa hoje é elegível |
+| Viagem | `startDate` (data de calendário) ainda não passou, comparada ao **dia UTC** do relógio de referência; viagem que começa hoje é elegível; data impossível (`2027-13-45`) é tratada como viagem não ativa |
 | Dado | somente `dataClassification: REAL`; `SIMULATED` e desconhecidos são sempre excluídos |
 | Comparabilidade | moeda única e preço atual presente |
 | Amostra | pelo menos 5 observações anteriores em 2 dias distintos |
@@ -446,6 +446,8 @@ Política aplicada (constantes do módulo, sem configuração por HTTP):
 | Ranking | por moeda: diferença decrescente, percentual mais negativo, `externalKey`; limite de 10 por moeda |
 
 Motivos de exclusão: `TRIP_NOT_ACTIVE`, `SIMULATED_DATA`, `UNCLASSIFIED_DATA`, `MALFORMED_OFFER`, `NO_CURRENT_PRICE`, `MIXED_CURRENCY`, `SMALL_SAMPLE`, `INVALID_OBSERVATION_TIME`, `STALE_OBSERVATION`, `NOT_BELOW_THRESHOLD`, `NO_CURRENCY_FLOOR`, `BELOW_ABSOLUTE_FLOOR`, `RANK_LIMIT_EXCEEDED`.
+
+`RANK_LIMIT_EXCEEDED` não é reprovação por qualidade de dado: a oferta passou por todos os portões de elegibilidade, mas ficou **fora das primeiras posições do ranking da sua moeda** (limite de 10 por moeda).
 
 **Moedas nunca se misturam:** o ranking é feito dentro de cada moeda, o limite é por moeda e não existe conversão cambial. Uma moeda sem piso absoluto declarado é excluída (`NO_CURRENCY_FLOOR`) em vez de herdar o piso de outra.
 

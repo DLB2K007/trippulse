@@ -276,7 +276,12 @@ function toDateOnly(value) {
 
 // startDate é DATE no banco: o dia UTC de `now` é a referência, sem hora.
 // Inclusivo: viagem que começa hoje ainda é elegível.
-function evaluateTripActive(trip, now) {
+//
+// Exportada para o núcleo de monitoramento (modules/monitoring): a regra
+// "viagem monitorável" é UMA só no sistema. Exportar aqui — sem alterar o
+// comportamento um byte que seja — garante que diagnóstico e oportunidades
+// nunca admitam viagens diferentes.
+export function evaluateTripActive(trip, now) {
   const startDate = toDateOnly(trip?.startDate);
 
   if (startDate === null) {

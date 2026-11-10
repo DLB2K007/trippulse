@@ -11,7 +11,8 @@
 //   - SIGTERM/SIGINT executam encerramento gracioso IDEMPOTENTE:
 //       scheduler.stop()  → timer pendente cancelado; nenhum ciclo NOVO;
 //       scheduler.idle()  → ciclo EM VOO termina antes de fechar o servidor
-//                           (nunca interrompido abruptamente);
+//                           (nunca interrompido abruptamente), com timeout
+//                           configurável para não reter o processo para sempre;
 //       await app.close() → com tratamento de erro (falha no close não vira
 //                           unhandledRejection e encerra com código 1);
 //       terminate(0)      → saída limpa.
@@ -25,8 +26,30 @@
 
 import { pathToFileURL } from 'node:url';
 import { buildApp } from './app.js';
-import { loadEnv } from './config/env.js';
+import { loadEnv, SHUTDOWN_TIMEOUT_DEFAULT_MS } from './config/env.js';
 import { createMonitoringScheduler } from './modules/monitoring/scheduler.js';
+
+/**
+ * Aguarda o idle do scheduler com prazo. `false` significa que o ciclo em voo
+ * não terminou a tempo; o chamador decide encerrar mesmo assim (o run NÃO é
+ * abortado aqui). O timer é sempre limpo, inclusive quando o idle vence.
+ *
+ * @param {{ idle: () => Promise<void> }} scheduler
+ * @param {number} timeoutMs
+ * @returns {Promise<boolean>} true = idle concluído; false = timeout
+ */
+function waitForSchedulerIdle(scheduler, timeoutMs) {
+  let timer;
+  const timeout = new Promise((resolve) => {
+    timer = setTimeout(() => resolve(false), timeoutMs);
+  });
+
+  const idle = Promise.resolve()
+    .then(() => scheduler.idle())
+    .then(() => true);
+
+  return Promise.race([idle, timeout]).finally(() => clearTimeout(timer));
+}
 
 /**
  * Sobe a API completa: Fastify + (opcionalmente) agendador de monitoramento.
@@ -58,6 +81,11 @@ export async function startServer({
   // Lida ANTES de criar o app (Fase B.1 — L4): env estruturalmente inválido
   // falha alto sem deixar uma instância de Fastify aberta.
   const { enabled, intervalMs } = env.monitoringScheduler;
+  const shutdownTimeoutMs = env.shutdownTimeoutMs ?? SHUTDOWN_TIMEOUT_DEFAULT_MS;
+
+  if (!Number.isInteger(shutdownTimeoutMs) || shutdownTimeoutMs <= 0) {
+    throw new TypeError('shutdownTimeoutMs precisa ser um inteiro positivo.');
+  }
 
   const app = createApplication();
   let scheduler = null;
@@ -88,7 +116,15 @@ export async function startServer({
           scheduler.stop();
           // 2) ciclo EM VOO: aguarda o desfecho completo (não aborta o run —
           //    o service finaliza a linha no banco) antes de fechar o app.
-          await scheduler.idle();
+          //    O timeout evita que um ciclo travado retenha o processo; se
+          //    expirar, seguimos para o close e o heartbeat permite a
+          //    recuperação posterior da linha.
+          const idleCompleted = await waitForSchedulerIdle(scheduler, shutdownTimeoutMs);
+          if (!idleCompleted) {
+            app.log.warn(
+              `timeout de ${shutdownTimeoutMs} ms aguardando o ciclo em voo; encerrando sem aguardar o término.`
+            );
+          }
         }
 
         // 3) fecha Fastify (rotas/plugins/onClose inclusos). Erro aqui não

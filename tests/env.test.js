@@ -11,6 +11,7 @@ import { loadEnv } from '../apps/api/src/config/env.js';
 const ENV_KEYS = [
   'MONITORING_SCHEDULER_ENABLED',
   'MONITORING_SCHEDULER_INTERVAL_MS',
+  'SHUTDOWN_TIMEOUT_MS',
   'PORT',
   'HOST',
 ];
@@ -86,7 +87,26 @@ test('ENABLED estrito: todo o resto desativa, sem warn para valores explícitos'
 test('default: scheduler OFF por padrão e intervalo 900000 ms', () => {
   withEnv({}, () => {
     assert.deepEqual(loadEnv().monitoringScheduler, { enabled: false, intervalMs: 900000 });
+    assert.equal(loadEnv().shutdownTimeoutMs, 10000);
   });
+});
+
+test('SHUTDOWN_TIMEOUT_MS: default 10000, fronteiras válidas e inválidos fail-fast', () => {
+  withEnv({}, () => {
+    assert.equal(loadEnv().shutdownTimeoutMs, 10000);
+  });
+
+  for (const raw of ['1000', '10000', '60000']) {
+    withEnv({ SHUTDOWN_TIMEOUT_MS: raw }, () => {
+      assert.equal(loadEnv().shutdownTimeoutMs, Number(raw), `raw='${raw}'`);
+    });
+  }
+
+  for (const raw of ['0', '999', '60001', '-1', 'abc', '10000.5', '10000abc']) {
+    withEnv({ SHUTDOWN_TIMEOUT_MS: raw }, () => {
+      assert.throws(() => loadEnv(), TypeError, `raw='${raw}'`);
+    });
+  }
 });
 
 test('intervalo válido com scheduler OFF é respeitado (informação pronta p/ Fase B)', () => {

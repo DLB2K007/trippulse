@@ -1,7 +1,7 @@
 # Relatório de continuidade — TripPulse
 
-> Atualizado em 2026-11-09. Cobre os **Dias 1 a 11.4**: o **Dia 11.3 está commitado em `46acf4a`**; o **Dia 11.4 está no working tree, sem commit** (não existe hash). `main` sincronizada com `origin/main` em `46acf4a`.
-> O CI validou o Dia 9 em `fdfb7a7` (run `42520790068`, verde); os Dias 11.1/11.2/11.3 estão publicados em `origin/main` (11.3 em `46acf4a`). Apenas o Dia 11.4 ainda não tem commit.
+> Atualizado em 2026-11-09. Cobre os **Dias 1 a 11.5**: o **Dia 11.3 está publicado em `46acf4a`** e o **Dia 11.4 em `83eb1ec`**; `main` sincronizada com `origin/main` em `83eb1ec`. O **Dia 11.5 está no working tree, ainda sem commit**.
+> O CI validou o Dia 9 em `fdfb7a7` (run `42520790068`, verde); os Dias 11.1/11.2/11.3 estão publicados em `origin/main` (11.3 em `46acf4a`) e o 11.4 também foi publicado (`83eb1ec`).
 > Em 2026-11-08 o histórico foi reescrito para corrigir a autoria: todos os 14 commits agora são `DLB2K007 <danielbordini027@gmail.com>`. Os hashes citados neste relatório já são os novos; os antigos não existem mais na `main`.
 > Documento de contexto oficial do projeto: **`docs/contexto.md`** (o usuário pode referir-se a ele por outros nomes, como "PROJECT_CONTEXT.md" — é sempre este arquivo).
 > Versões anteriores deste relatório cobrem o estado até o Dia 5 (commit `9605f03`).
@@ -45,12 +45,19 @@ Ao longo de 11 dias incrementais, o TripPulse saiu de documento vazio para um **
 - **11.2 — Execução manual (`34e9135`)**: `monitoring.service.js` (`startMonitoringRun` com lock in-process setado sincronicamente antes do primeiro `await` + liberação em `finally` + dependências injetáveis com defaults de produção) e `monitoring.routes.js` (`POST /monitoring/runs`, schema fechado verificado empiricamente no Fastify 5: POST sem body chega como `null` → body `object|null`, `maxProperties: 0`). Reutiliza integramente `searchFlightsForTrip`, `listTripOpportunities` e `listTrips` — nada duplicado. `GET` deliberadamente ausente (sem persistência ainda). 6 testes de integração. O script `test` ganhou `--test-concurrency=1`: causa raiz documentada de flakiness — arquivos de teste do node:test rodam em paralelo sobre o único PostgreSQL e a corrida entre arquivos (colisão com `opportunities-endpoint.test.js`) foi eliminada executando arquivos sequencialmente.
 - **11.3 — Persistência de execuções (`46acf4a`)**: migration `20261109131507_add_monitoring_runs` (model `MonitoringRun` com índice parcial único no Postgres `monitoring_runs_one_running_key` em `status = 'RUNNING'` — árbitro de concorrência **entre processos**; o lock in-process permanece como fast path). `startMonitoringRun` cria a linha RUNNING (P2002 → 409 **só** quando comprovadamente deste índice; obtido em `meta.driverAdapterError.cause.constraint.index` no Prisma 7 + adapter-pg, pois `meta.target` clássico não vem),  executa o núcleo intocado e finaliza **sempre** no desfecho: `COMPLETED` (com contagens e itens do relatório) ou `FAILED` (ciclo abortou — falha global; falha por viagem segue sendo dado do relatório, não status). `POST /monitoring/runs` evoluiu para devolver o registro persistido (mudança de contrato documentada); `GET /monitoring/runs` devolve o histórico real (mais recentes primeiro, `limit` 1–100 default 20, sem dado fictício). 10 testes de integração/persistência (05 do 11.2 evoluídos + 4 novos).
 
-**Dia 11.4 — Agendador automático (working tree, sem commit):**
+**Dia 11.4 — Agendador automático (commit `83eb1ec`, publicado em `origin/main`):**
 
 - **Fase A — agendador + configuração**: `modules/monitoring/scheduler.js` com after-complete loop (nunca `setInterval`), primeiro ciclo só após o intervalo completo (D1), no máximo um timer e uma cadeia por instância, `stop()` durante ciclo em voo sem abortar o ciclo. `env.js` passa a expor `monitoringScheduler` com `MONITORING_SCHEDULER_ENABLED` estrito (default **OFF**) e `MONITORING_SCHEDULER_INTERVAL_MS` inteiro entre 60000 e 86400000 ms (default 900000), com fail-fast apenas quando o agendador está ativo. 18 testes do scheduler (17 unitários sem tempo real + 1 de integração com `trigger: SCHEDULED`) e 11 de ambiente.
 - **Fase B — wiring ao bootstrap**: `server.js` ganhou `startServer(deps)` injetável; o scheduler é criado e iniciado **somente após** `listen()` bem-sucedido, handlers de sinal são registrados uma única vez e o shutdown idempotente executa `scheduler.stop()` → `await scheduler.idle()` → `await app.close()` → `terminate(0)`. `buildApp()` permanece intocado e nunca ativa o scheduler. 13 testes de bootstrap.
 - **Fase B.1 — hardening da revisão independente**: M1 (stop→start com ciclo em voo não duplica timers; `cycleRunning` separado da promessa do `idle()` cobre também tick que falha antes do primeiro `await`), M2 (parsing estrito rejeita `60000abc`, `60000.9`, `60000 0`), M3 (helper de ambiente isola/restaura `PORT`, `HOST` e variáveis do scheduler), L1 (log de início dentro do `try`; falha de logger não mata a cadeia nem gera `unhandledRejection`), L2 (falha pós-listen executa `scheduler.stop()` + `app.close()` + exit 1 com log próprio, sem rotular como falha de listen) e L4 (config lida antes de criar a aplicação). 8 testes novos; suíte em 167.
-- **Fase C — documentação, auditoria final e validação integrada**: README (agendador, defaults, D1, persistência e shutdown), `.env.example` (as duas variáveis, com scheduler desligado) e este relatório. Auditoria integral sem defeito funcional novo (duas imprecisões documentais corrigidas no código) e validação: **167/167 em 3 rodadas**, mais 2 rodadas com `PORT`/`HOST` poluídos; smoke OFF real (`/health` 200, sem scheduler) e smoke ON real com intervalo mínimo configurado de 60000 ms: o primeiro ciclo ocorreu **60.210 ms após o boot** (sessenta mil duzentos e dez milissegundos), equivalentes a **60,21 s** (1 minuto e 0,21 s) — nenhum ciclo antes dos 60 s, `MonitoringRun` persistido com `trigger: SCHEDULED`, shutdown gracioso e zero ciclos nos 65 s seguintes ao stop.
+- **Fase C — documentação, auditoria final e validação integrada**: README (agendador, defaults, D1, persistência e shutdown), `.env.example` (as duas variáveis, com scheduler desligado) e este relatório. Auditoria integral sem defeito funcional novo (duas imprecisões documentais corrigidas no código) e validação: **167/167 em 3 rodadas**, mais 2 rodadas com `PORT`/`HOST` poluídos; smoke OFF real (`/health` 200, sem scheduler) e smoke ON real com intervalo mínimo configurado de 60000 ms: o primeiro ciclo ocorreu **60.210 ms após o boot** (sessenta mil duzentos e dez milissegundos), equivalentes a **60,21 s** (1 minuto e 0,21 s) — nenhum ciclo antes dos 60 s, `MonitoringRun` persistido com `trigger: SCHEDULED`, shutdown gracioso e zero ciclos nos 65 s seguintes ao stop. Commit `83eb1ec` (pai `46acf4a`), publicado em `origin/main`.
+
+**Dia 11.5 — Resiliência do scheduler (working tree, não commitado):**
+
+- **Heartbeat + recuperação de órfãs**: migration `20261109170000_add_monitoring_run_heartbeat` adiciona `heartbeat_at` (default `now`, backfill com `started_at`) e `failure_reason` a `monitoring_runs`. `startMonitoringRun` renova o heartbeat antes/depois de cada pesquisa e avaliação; `recoverStaleMonitoringRuns({ staleAfterMs })` converte em `FAILED` toda execução `RUNNING` sem heartbeat por 30 min e devolve o motivo. A recuperação roda antes de cada nova execução (manual ou agendada), então uma linha órfã não bloqueia o índice parcial indefinidamente. Execução com heartbeat recente nunca é tocada.
+- **Posse protegida**: os `UPDATE`s finais (COMPLETED e FAILED) são condicionados a `status = 'RUNNING'`. Se outro processo recuperou a linha enquanto o ciclo atrasado ainda trabalhava, o ciclo recebe `409` e não sobrescreve o `FAILED` de recuperação.
+- **Timeout de shutdown**: `SHUTDOWN_TIMEOUT_MS` (default 10000, faixa 1000–60000, fail-fast se presente e inválido) limita a espera por `scheduler.idle()`. Se expirar, o shutdown registra `warn`, segue para `app.close()` e encerra; o ciclo não é abortado e a recuperação por heartbeat cobre a linha. O timer é sempre limpo.
+- **Validação**: **175/175 testes** em 16 arquivos, incluindo recuperação de órfã, preservação de execução viva, `409` para heartbeat recente, ciclo atrasado que não ressuscita a linha, renovação do heartbeat em ciclo real (prova do `withHeartbeat`), timeout de shutdown e validação da nova variável.
 
 ---
 
@@ -69,7 +76,8 @@ Ao longo de 11 dias incrementais, o TripPulse saiu de documento vazio para um **
 | Identificação determinística de oportunidades | ✅ Implementado e testado (Dias 10.1 e 10.2, commitados) |
 | Monitoramento — núcleo puro do ciclo | ✅ Implementado e testado (Dia 11.1) |
 | Monitoramento — execução manual (POST) | ✅ Implementado e testado, com persistência e histórico (Dias 11.2–11.3) |
-| Monitoramento — agendador (execuções programadas) | ✅ Implementado e testado (Dia 11.4, working tree; OFF por padrão) |
+| Monitoramento — agendador (execuções programadas) | ✅ Implementado e testado (Dia 11.4, `83eb1ec`; OFF por padrão) |
+| Monitoramento — recuperação de `RUNNING` órfão + timeout de shutdown | ✅ Implementado e testado (Dia 11.5, working tree) |
 | Integração **real** com provedores | ❌ Não iniciado (bloqueado por decisão de escopo do MVP) |
 | Agente de IA / recomendações | ❌ Não iniciado |
 | Notificações, hotéis, veículos, atividades; publicação | ❌ Não iniciado |
@@ -112,9 +120,9 @@ trippulse/
 │   ├── app.js                # monta Fastify + /health + plugins no prefixo /trips
 │   └── server.js             # bootstrap: listen → scheduler → handlers → shutdown gracioso
 ├── docs/ (contexto.md, relatorio-continuidade.md)
-├── prisma/ (schema.prisma + 3 migrations)
+├── prisma/ (schema.prisma + 4 migrations)
 ├── prisma.config.ts          # conexão do CLI (tolerante a .env ausente)
-├── tests/ (15 arquivos, 167 testes)
+├── tests/ (16 arquivos, 175 testes)
 ├── docker-compose.yml · .env.example · README.md · package.json
 ```
 
@@ -157,11 +165,13 @@ GET /trips/:tripId/analysis
 
 POST /monitoring/runs
   → validações (now/trigger) → lock in-process (set síncrono; 409 em uso)
+  → recupera RUNNING com heartbeat expirado (FAILED + failure_reason)
   → INSERT monitoring_runs (RUNNING) — P2002 do índice parcial → 409
   → runMonitoringCycle (núcleo puro do 11.1):
-      para cada viagem: evaluateTripActive → skip | search (escreve histórico)
+      para cada viagem: heartbeat → evaluateTripActive → skip | search (escreve histórico)
       → opportunities (só leitura) → item OK | FAILED(stage)
-  → UPDATE sempre (finally): COMPLETED (contagens+itens) ou FAILED (aborto)
+  → UPDATE condicionado a status=RUNNING: COMPLETED (contagens+itens) ou FAILED
+    (aborto); se a posse foi recuperada por outro processo → 409, sem sobrescrever
   → resposta: registro persistido (runId, status, contagens, itens)
 
 GET /monitoring/runs?limit=20
@@ -175,7 +185,7 @@ Agendador (MONITORING_SCHEDULER_ENABLED=true)
 
 SIGTERM/SIGINT
   → scheduler.stop() (cancela o timer; nenhum ciclo NOVO)
-  → await scheduler.idle() (ciclo em voo termina, não é abortado)
+  → await scheduler.idle() com SHUTDOWN_TIMEOUT_MS (não aborta o ciclo; timeout → warn)
   → await app.close() → terminate(0); sinais repetidos = mesma promessa
 ```
 
@@ -197,13 +207,14 @@ trips (Trip)
 
 monitoring_runs (MonitoringRun)  — sem FK: registro operacional, independente de viagens
   id uuid pk · status (RUNNING|COMPLETED|FAILED) · trigger (MANUAL|SCHEDULED) ·
-  started_at · finished_at? · duration_ms? · trip_count · monitorable_count ·
-  skipped_count · ok_count · failed_count · opportunity_count · items jsonb
+  started_at · heartbeat_at · finished_at? · duration_ms? · trip_count ·
+  monitorable_count · skipped_count · ok_count · failed_count · opportunity_count ·
+  items jsonb · failure_reason?
   @@index(started_at)
   § índice parcial único: UNIQUE(status) WHERE status = 'RUNNING'  ← árbitro
 ```
 
-**Migrations aplicadas**: `20261107211054_init_create_trips` (trips), `20261107214055_add_flight_offers_and_price_history` (flight_offers, price_history, FKs, índices) e `20261109131507_add_monitoring_runs` (monitoring_runs + índice parcial único escrita na mão — Prisma não modela índice parcial).
+**Migrations aplicadas**: `20261107211054_init_create_trips` (trips), `20261107214055_add_flight_offers_and_price_history` (flight_offers, price_history, FKs, índices), `20261109131507_add_monitoring_runs` (monitoring_runs + índice parcial único escrito na mão — Prisma não modela índice parcial) e `20261109170000_add_monitoring_run_heartbeat` (heartbeat/failure_reason, com backfill).
 
 **Ambiente local**: container `trippulse-db` (postgres:17-alpine, healthcheck, volume nomeado). Porta **5433 no host** → 5432 no container. `DATABASE_URL=postgresql://trippulse:trippulse@localhost:5433/trippulse?schema=public`.
 
@@ -228,7 +239,8 @@ monitoring_runs (MonitoringRun)  — sem FK: registro operacional, independente 
 | 11.1 (`908a851`) | `modules/monitoring/monitoring-core.js` (novo), `tests/monitoring-core.test.js` (novo, 12), `opportunity-policy.js` (export aditivo de `evaluateTripActive`, +6/−1). **Sem migration e sem dependência nova.** |
 | 11.2 (`34e9135`) | `modules/monitoring/{monitoring.service,monitoring.routes}.js` (novos), `app.js` (registro em `/monitoring`), `tests/monitoring-endpoint.test.js` (novo, 6), `package.json` (script `test` com `--test-concurrency=1`). **Sem migration e sem dependência nova.** |
 | 11.3 (`46acf4a`) | `migration 20261109131507_add_monitoring_runs` (nova, com índice parcial único manual), `schema.prisma` (model `MonitoringRun`), `monitoring.service.js` (persistência + árbitro), `monitoring.routes.js` (GET + POST evoluído), `tests/monitoring-endpoint.test.js` (10 testes), README (seção `/monitoring`), este relatório. **Dependência nova: nenhuma.** |
-| 11.4 (working tree, sem commit) | `modules/monitoring/scheduler.js` (novo), `config/env.js` (config do scheduler), `server.js` (startServer + wiring + shutdown; Fase B.1), `tests/{monitoring-scheduler,env,server-bootstrap}.test.js` (novos, 18/11/13), `README` (agendador), `.env.example` (2 variáveis), este relatório. **Sem migration, sem dependência nova e sem mudança de escopo do ciclo.** |
+| 11.4 (`83eb1ec`) | `modules/monitoring/scheduler.js` (novo), `config/env.js` (config do scheduler), `server.js` (startServer + wiring + shutdown; Fase B.1), `tests/{monitoring-scheduler,env,server-bootstrap}.test.js` (novos, 18/11/13), `README` (agendador), `.env.example` (2 variáveis), este relatório. **Sem migration, sem dependência nova e sem mudança de escopo do ciclo.** |
+| 11.5 (working tree) | `prisma/schema.prisma` (+`heartbeat_at`, `failure_reason`), migration `20261109170000_add_monitoring_run_heartbeat`, `monitoring.service.js` (heartbeat + recuperação + posse), `server.js` (timeout do idle), `config/env.js` (`SHUTDOWN_TIMEOUT_MS`), `tests/monitoring-recovery.test.js` (novo, 5), `tests/{env,server-bootstrap,monitoring-endpoint}.test.js` (ajustes), README e `.env.example`. **Sem dependência nova.** |
 
 **Scripts npm atuais**: `start` · `dev` (`--watch`) · `start:no-env` · `db:migrate` (`migrate dev && generate`) · `db:deploy` (= `prisma migrate deploy`, também usado no CI) · `postinstall` (`prisma generate`) · `test` (`node --env-file=.env --test --test-force-exit --test-concurrency=1` — arquivos sequenciais porque todos compartilham o mesmo PostgreSQL).
 
@@ -236,7 +248,7 @@ monitoring_runs (MonitoringRun)  — sem FK: registro operacional, independente 
 
 ## 6. Testes
 
-**167/167 passando** (arquivos sequenciais — ver Decisão 22): estado do Dia 11.4 (working tree). Três rodadas completas e duas rodadas com `PORT`/`HOST` exportados no shell, todas verdes.
+**175/175 passando em 3 rodadas completas** (arquivos sequenciais — ver Decisão 22): estado do Dia 11.5 (working tree), incluindo o 5º teste de recovery — "ciclo real renova o heartbeat DURANTE a execução (prova do `withHeartbeat`)" — que prova a renovação pré e pós-operação com promessa adiada e marcador temporal no futuro (+60 s), sem sleeps. Suíte completa executada localmente em 10/11/2026; o teste isolado de recovery passou 5/5; `git diff --check` limpo (exit 0); banco local saudável com a migration `20261109170000_add_monitoring_run_heartbeat` aplicada (`prisma migrate status`: "Database schema is up to date"). Implementação de produção **intocada** na correção de cobertura (nenhuma mudança de código, schema ou migrations).
 
 | Arquivo | Testes | O que protege |
 |---|---|---|
@@ -251,10 +263,11 @@ monitoring_runs (MonitoringRun)  — sem FK: registro operacional, independente 
 | `tests/opportunities-endpoint.test.js` | 5 | endpoint com fixtures determinísticas: 400/404 e rejeição de querystring; viagem sem ofertas; real × simulada × sem queda (motivos e contagens); lista vazia quando só há simulados; repetibilidade, ausência de escrita e contratos de `/analysis` e `/offers/history` preservados |
 | `tests/opportunities-days.test.js` | 5 | redução pura de dias distintos: regressão da linha final inválida (não conta o dia do `current` como histórico), linhas inutilizáveis descartadas antes de eleger o `current`, entrada nula/vazia/sem histórico, `observedAt` inválido em qualquer posição |
 | `tests/monitoring-core.test.js` | 12 | núcleo puro do ciclo: viagem iniciando hoje/executável, futura, inativa sem chamadas, nenhuma monitorável, lista vazia, contagem de oportunidades, falha isolada de pesquisa (oportunidades não chamadas), falha isolada de oportunidades (pesquisa conta), múltiplas misturadas com contagens fechadas, determinismo, imutabilidade+freeze, dependências/`now` inválidos (fail alto, zero chamadas) |
-| `tests/env.test.js` | 11 | config do agendador: default OFF/900000; boolean estrito (`true`/`1`; `yes`/`sim` desativam com `warn`); intervalo inválido ignorado com OFF e fail-fast com ON; fronteiras 60000/86400000; **M2: rejeita `60000abc`, `60000.9`, `60000 0`**; **M3: isola e restaura `PORT`/`HOST`, sem vazamento do shell** |
+| `tests/env.test.js` | 12 | config do agendador: default OFF/900000; boolean estrito (`true`/`1`; `yes`/`sim` desativam com `warn`); intervalo inválido ignorado com OFF e fail-fast com ON; fronteiras 60000/86400000; **M2: rejeita `60000abc`, `60000.9`, `60000 0`**; **M3: isola e restaura `PORT`/`HOST`, sem vazamento do shell**; timeout de shutdown default 10000, fronteiras e fail-fast |
 | `tests/monitoring-scheduler.test.js` | 18 | agendador: timer único e idempotente; D1 (nada antes do intervalo); after-complete sem sobreposição; 409 como skip; erro genérico não para a cadeia; stop em voo; `idle()`; logs sem duplicação; **M1: stop→start em voo mantém uma cadeia e zero timers no stop final**; **borda: tick que falha antes do 1º `await` não deixa ciclo fantasma**; **L1: logger quebrado não mata a cadeia nem gera `unhandledRejection`**; integração real: `defaultScheduledRun` grava `trigger: SCHEDULED` |
-| `tests/server-bootstrap.test.js` | 13 | bootstrap: OFF nunca cria scheduler; ON inicia só após `listen` e usa o logger do Fastify; listen falhando → exit 1 sem factory/handlers; **L2: falha pós-listen (factory ou handlers) → stop + close + exit 1 com log da fase**; **L4: env incompleto falha antes de `createApplication`**; SIGTERM/SIGINT mesma sequência; shutdown idempotente; `close()` aguarda ciclo em voo; falha de `close`; `buildApp` real em porta 0; factory real com relógio falso |
+| `tests/server-bootstrap.test.js` | 15 | bootstrap: OFF nunca cria scheduler; ON inicia só após `listen` e usa o logger do Fastify; listen falhando → exit 1 sem factory/handlers; **L2: falha pós-listen (factory ou handlers) → stop + close + exit 1 com log da fase**; **L4: env incompleto falha antes de `createApplication`**; SIGTERM/SIGINT mesma sequência; shutdown idempotente; `close()` aguarda ciclo em voo; **L3: timeout do idle não retém o processo e registra warn**; `shutdownTimeoutMs` inválido falha antes do app; falha de `close`; `buildApp` real em porta 0; factory real com relógio falso |
 | `tests/monitoring-endpoint.test.js` | 10 | persistência: POST grava run COMPLETED refletindo relatório (linha verificada no banco); POST valida body/query ({} ok); GET histórico real com ordem decrescente e limit; GET valida limit; **árbitro: RUNNING de outro processo → 409 e nenhuma segunda linha RUNNING**; 200+409 simultâneos com lock liberado depois; falha isolada por viagem com run COMPLETED; **ciclo abortado → run FAILED, finishedAt gravado, nenhum RUNNING órfão**; concorrência in-process (1 ciclo, 1 rejeição, 1 pesquisa); trigger fora do vocabulário → TypeError sem criar linha |
+| `tests/monitoring-recovery.test.js` | 5 | recuperação de órfã: heartbeat expirado → FAILED com `failureReason`; heartbeat recente preservado; `startMonitoringRun` recupera antes de criar nova execução; ciclo atrasado perde a posse e não sobrescreve a recuperação com COMPLETED; ciclo real renova o heartbeat DURANTE a execução (promessa adiada + marcador futuro — prova do `withHeartbeat`) |
 
 Histórico dos testes manuais (Dias 1–5) está documentado como superseded pela suíte. Falhas encontradas durante o desenvolvimento foram todas corrigidas e viraram regressões quando aplicável.
 
@@ -290,6 +303,8 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 26. **Scheduler OFF por padrão e config fail-fast (Dia 11.4)**: `MONITORING_SCHEDULER_ENABLED` só aceita `true`/`1` (resto desativa; valor não reconhecido avisa); `MONITORING_SCHEDULER_INTERVAL_MS` é inteiro 60000–86400000 (default 900000), com parsing **estrito** (não `parseInt`) e `TypeError` no boot apenas quando o agendador está ativo e o valor presente é inválido. Com OFF a invalidade é irrelevante e cai no default — nunca “scheduler silenciosamente ligado com 1 ms”
 27. **Wiring só depois do `listen`; shutdown gracioso e idempotente (Dia 11.4)**: o scheduler nasce após a porta abrir (falha de listen não cria timers/handlers) e o encerramento é `stop()` (corta a cadeia) → `idle()` (espera o ciclo em voo, sem abortar) → `close()` → `terminate(0)`; sinais repetidos compartilham a mesma promessa. Falha **pós-listen** tem tratamento próprio: log da fase, `stop()`, `close()` e exit 1. `buildApp()` permanece sem scheduler — testes HTTP nunca disparam ciclos
 28. **Hardening B.1 (Dia 11.4)**: uma única cadeia por instância, com `cycleRunning` (verdade sobre ciclo em curso) separada de `inFlight` (promessa do `idle()`) — cobre stop→start em voo e tick que falha antes do primeiro `await`; log de início dentro do `try` e `catch` na promessa do idle, de modo que logger quebrado não mata a cadeia nem gera `unhandledRejection`; testes de ambiente isolam `PORT`/`HOST` (a suíte não depende do shell)
+29. **Heartbeat é a posse (Dia 11.5)**: cada execução renova `heartbeat_at` antes/depois de cada trabalho externo; `RUNNING` sem heartbeat por 30 min é recuperado como `FAILED` por `UPDATE` condicional. A recuperação roda antes de cada execução e é idempotente entre processos. Os desfechos também são condicionais a `status=RUNNING`: um ciclo atrasado que perdeu a posse recebe `409` e nunca converte uma recuperação em `COMPLETED`. A alternativa de recuperar todo `RUNNING` no boot foi rejeitada porque poderia roubar um ciclo legítimo de outro worker. **Limitação de clock skew (registrada, não é bug confirmado no deployment atual)**: o limiar de staleness é calculado no relógio do processo e comparado contra `heartbeat_at` que pode ter sido gravado por outra instância; em multi-host com relógios dessincronizados, uma instância com relógio adiantado poderia recuperar prematuramente uma execução legítima de outra. O pressuposto operacional atual é deployment single-instance ou hosts com relógios sincronizados; não há tratamento específico de clock skew nesta implementação, e a limitação permanece arquitetural documentada. **Efeitos parciais de posse perdida (inerentes ao desenho de lease)**: um ciclo pode ter persistido ofertas/observações antes de perder a posse; quando recuperado, o status final é `FAILED` com `failureReason` de perda de posse e **não há rollback** das gravações já realizadas — a recuperação do registro não desfaz operações de negócio, e a consistência dessas gravações depende das garantias dos serviços de persistência individuais (não existe rollback global automático do ciclo)
+30. **Timeout do shutdown não aborta o ciclo (Dia 11.5)**: `SHUTDOWN_TIMEOUT_MS` limita apenas a espera por `idle()`; se expirar, o processo encerra e a linha eventualmente `RUNNING` é recuperada pelo heartbeat na execução seguinte. Abortar o provedor exigiria `AbortController` atravessando service/provedores — mudança estrutural fora deste escopo. Isso preserva a regra de não interromper trabalho em voo e evita processo retido indefinidamente
 
 ---
 
@@ -315,14 +330,18 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 
 **Bugs conhecidos:** nenhum aberto. O único bug real já registrado (datas `Invalid` no simulador) foi corrigido no Dia 6 com regressão.
 
-**Riscos documentados do monitoramento (Dia 11.3):**
-- Se o banco cair **exatamente na finalização**, a linha pode ficar RUNNING (a `INSERT` de UPDATE de desfecho falhou e o erro original é preservado deliberadamente). É risco registrado, não bug: exige indisponibilidade do banco no meio da execução; o índice parcial garante que um novo ciclo informará 409 até a linha ser limpa manualmente.
+**Riscos residuais do monitoramento (Dia 11.3; recuperação implementada no 11.5):**
+- Se o banco cair **exatamente na finalização**, a linha ainda pode ficar RUNNING (o UPDATE de desfecho falhou e o erro original é preservado deliberadamente). A diferença é que ela não fica bloqueada para sempre: o próximo ciclo com heartbeat expirado a converte em FAILED e segue. O atraso é de até `staleAfterMs` (30 min) mais o intervalo do scheduler; não há limpeza manual obrigatória.
+- A recuperação é **lazy** (antes da próxima execução), não no boot. Um RUNNING fresco de um processo que acabou de morrer ainda pode causar 409 até o heartbeat expirar. Um provedor que passe mais de 30 min sem renovar heartbeat também pode ser tratado como órfão; o limite é conservador e coberto por teste.
 - Sem alerta de execução FAILED/órfã (notificações pertencem a outro escopo).
+- **Clock skew multi-host**: o limiar de staleness usa o relógio do processo contra `heartbeat_at` que pode ter sido gravado por outra instância; pressuposto single-instance/relógios sincronizados — detalhe na Decisão 29 (limitação arquitetural, não bug no deployment atual).
 
-**Riscos e dívidas documentados do agendador (Dia 11.4):**
-- **Shutdown sem timeout (L3, fora do escopo por decisão)**: `idle()` aguarda o ciclo em voo sem prazo; um ciclo travado retém o processo até o SIGKILL do orquestrador. Se o banco cair no meio, a linha pode ficar `RUNNING` (mesmo risco do 11.3) e bloquear ciclos seguintes com 409 até limpeza manual. Opções futuras: grace period configurável (barato, mas não cancela o run), `AbortController` atravessando service/provedores (mudança estrutural) e recuperação de `RUNNING` órfão no boot (migration/consulta nova). Nenhuma foi implementada
+**Riscos e dívidas residuais do agendador (Dia 11.4/11.5):**
+- **Timeout não aborta o ciclo**: `SHUTDOWN_TIMEOUT_MS` evita que o processo fique retido, mas o trabalho em voo é interrompido pelo encerramento do processo, não por cancelamento cooperativo. A linha é recuperada pelo heartbeat na execução seguinte; `AbortController` continua sendo dívida estrutural.
+- **Testabilidade do timeout do shutdown**: `waitForSchedulerIdle` usa `setTimeout` real (não injetável), e o teste correspondente depende de um prazo curto de tempo real. O comportamento atual é **funcional**; injeção de relógio ou mecanismo de timeout determinístico pode ser considerada como futura melhoria de testabilidade. Implementação **não alterada** nesta etapa (débito registrável, não bloqueante).
 - **Listeners de sinal não são removidos e `app.close()` externo não para o scheduler (L4)**: hoje não há caminho concreto (um bootstrap por processo; o scheduler só nasce em `startServer`). Se o bootstrap for reutilizado no mesmo processo, convém guardar/remover handlers e adicionar hook `onClose` ou `dispose()`
 - **Sinais de SO reais não são exercitáveis neste Windows/Git Bash**: `timeout`/`kill` entregam TerminateProcess; a lógica é coberta com `EventEmitter` injetado e chamada direta de `shutdown()`, e o smoke ON real encerra pela função retornada. Validação de SIGTERM real fica para Linux/CI
+- **Checksum da migration 11.3**: o banco local registrava um checksum de uma versão anterior de `20261109131507_add_monitoring_runs` (o arquivo commitado é estável). O checksum local foi alinhado ao SHA-256 do arquivo sem resetar dados; `migrate dev --create-only` confirmou o schema em sincronia. CI com banco limpo não é afetado.
 
 ---
 
@@ -330,11 +349,12 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 
 | Ordem | Tarefa | Dependência |
 |---|---|---|
-| 1 | **Revisão e commit do Dia 11.4** (agendador + hardening + documentação) — working tree pronto, sem hash | Dias 11.1–11.3 |
-| 2 | Campo de origem no Trip (migration + input + query) | nada |
-| 3 | OpenAPI/Swagger formal | qualquer momento |
-| 4 | Provedor real (remover barreira anti-`REAL` com decisão explícita) | 1–3 maduros + credenciais de provedor |
-| 5 | Publicação da API (Dockerfile, env de produção, migrations no deploy, TLS/CORS/rate limit) | 1–4 + decisão de plataforma |
+| 1 | ✅ **Concluído — revisão, commit e push do Dia 11.4** (agendador + hardening + documentação), commit `83eb1ec` | Dias 11.1–11.3 |
+| 2 | **Concluída — correção de cobertura do Dia 11.5** (5º teste de recovery provando renovação de heartbeat em ciclo real) **e finalização documental** (débitos registrados nas decisões 29/30 e seção 8; handoff obsoleto arquivado em `docs/archive/`). Próximo checkpoint: revisão documental → autorização de commit → autorização de push | 1 |
+| 3 | Campo de origem no Trip (migration + input + query) | 2 |
+| 4 | OpenAPI/Swagger formal | qualquer momento |
+| 5 | Provedor real (remover barreira anti-`REAL` com decisão explícita) | 2–4 maduros + credenciais de provedor |
+| 6 | Publicação da API (Dockerfile, env de produção, migrations no deploy, TLS/CORS/rate limit) | 2–5 + decisão de plataforma |
 
 ---
 
@@ -352,9 +372,9 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 npm install          # já roda prisma generate (postinstall)
 docker compose up -d # banco na porta 5433
 cp .env.example .env
-npm test             # 167 testes, requer banco ativo
+npm test             # 175 testes, requer banco ativo
 npm run dev          # servidor com recarga
 curl http://localhost:3000/health → {"status":"ok","service":"trippulse-api"}
 ```
 
-> **Snapshot atual**: API com 12 endpoints, 4 tabelas, **167 testes automatizados em 15 arquivos** (0 abertos; Dias 1–10 e 11.1–11.2 validados pelo CI, 11.3 publicado em `origin/main` (`46acf4a`)). O **Dia 11.4 está no working tree, sem commit** (agendador automático, shutdown gracioso, hardening B.1 e esta documentação). Próximos passos: revisar/commitar o 11.4 → origem no Trip → OpenAPI.
+> **Snapshot atual**: API com 12 endpoints, 4 tabelas, **175 testes automatizados em 16 arquivos** (0 abertos; Dias 1–10 e 11.1–11.2 validados pelo CI; 11.3 e 11.4 publicados em `origin/main`, commits `46acf4a` e `83eb1ec`). **Estado do Dia 11.5**: implementado e validado, **ainda não commitado** — recuperação de órfãs por heartbeat + `failureReason`, timeout de shutdown configurável, migration `20261109170000_add_monitoring_run_heartbeat` aplicada no banco local, correção de cobertura do heartbeat concluída (5º teste de recovery), 175/175 × 3 rodadas, `git diff --check` limpo. Débitos residuais: clock skew multi-host e rollback de ciclos que perdem a posse (Decisão 29), timeout de shutdown não injetável (seção 8), `AbortController` estrutural. Handoff obsoleto do Dia 11.4 arquivado em `docs/archive/continuidade-2026-11-09-dia-11.4.md`. Git: `main == origin/main == 83eb1ec`, working tree = Dia 11.5 + documentação (nada staged). **Próximo checkpoint**: revisão documental → autorização de commit → autorização de push. Depois: origem no Trip → OpenAPI.

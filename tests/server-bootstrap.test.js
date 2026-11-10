@@ -20,8 +20,18 @@ import { startServer } from '../apps/api/src/server.js';
 import { createMonitoringScheduler } from '../apps/api/src/modules/monitoring/scheduler.js';
 import { buildApp } from '../apps/api/src/app.js';
 
-const ENV_OFF = { host: '127.0.0.1', port: 0, monitoringScheduler: { enabled: false, intervalMs: 900000 } };
-const ENV_ON = { host: '127.0.0.1', port: 0, monitoringScheduler: { enabled: true, intervalMs: 60000 } };
+const ENV_OFF = {
+  host: '127.0.0.1',
+  port: 0,
+  shutdownTimeoutMs: 10000,
+  monitoringScheduler: { enabled: false, intervalMs: 900000 },
+};
+const ENV_ON = {
+  host: '127.0.0.1',
+  port: 0,
+  shutdownTimeoutMs: 10000,
+  monitoringScheduler: { enabled: true, intervalMs: 60000 },
+};
 
 // Drena microtarefas (o corpo async do shutdown avança até o próximo await).
 async function drain() {
@@ -303,6 +313,44 @@ test('ciclo EM VOO durante o shutdown: close AGUARDA o idle; ciclo não é abort
   assert.equal(closed, true);
   assert.deepEqual(boot.operations, ['listen', 'start#1', 'stop#1', 'idle', 'close']);
   assert.deepEqual(boot.exitCodes, [0]);
+});
+
+test('L3: timeout de shutdown não deixa um ciclo travado reter o processo', async () => {
+  const boot = await bootFake({
+    env: { ...ENV_ON, shutdownTimeoutMs: 20 },
+    idleStalls: true,
+  });
+
+  boot.signals.emit('SIGTERM');
+  const closed = await boot.handle.shutdown('SIGTERM');
+
+  assert.equal(closed, true);
+  assert.deepEqual(boot.operations, ['listen', 'start#1', 'stop#1', 'idle', 'close']);
+  assert.deepEqual(boot.exitCodes, [0], 'saiu limpo após o timeout');
+  assert.equal(boot.counts.close(), 1);
+  assert.ok(
+    boot.logRecords.some((line) => line.startsWith('warn:') && line.includes('timeout de 20 ms')),
+    'timeout registrado como warn'
+  );
+});
+
+test('shutdownTimeoutMs inválido falha ANTES de criar o app', async () => {
+  let created = 0;
+
+  await assert.rejects(
+    startServer({
+      env: { ...ENV_ON, shutdownTimeoutMs: 0 },
+      createApplication: () => {
+        created += 1;
+        return createFakeStack().app;
+      },
+      signals: new EventEmitter(),
+      terminate: () => {},
+    }),
+    TypeError
+  );
+
+  assert.equal(created, 0);
 });
 
 test('app.close() falhando no shutdown: erro registrado, terminate(1), sem throw para fora', async () => {

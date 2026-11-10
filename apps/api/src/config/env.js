@@ -7,6 +7,13 @@ const SCHEDULER_MIN_INTERVAL_MS = 60000; // 1 minuto
 const SCHEDULER_MAX_INTERVAL_MS = 86400000; // 24 horas
 const SCHEDULER_DEFAULT_INTERVAL_MS = 900000; // 15 minutos
 
+// Timeout do encerramento gracioso para aguardar o ciclo do scheduler em voo.
+// Se expirar, o processo continua o shutdown sem abortar o ciclo; a
+// recuperação por heartbeat cobre a linha que eventualmente ficar RUNNING.
+const SHUTDOWN_TIMEOUT_MIN_MS = 1000;
+const SHUTDOWN_TIMEOUT_MAX_MS = 60000;
+export const SHUTDOWN_TIMEOUT_DEFAULT_MS = 10000;
+
 // Estrito: apenas 'true'/'1' ativa (qualquer outro valor desativa).
 const SCHEDULER_TRUTHY = new Set(['true', '1']);
 // Valores que expressam desativação de propósito (não merecem warn).
@@ -56,12 +63,31 @@ function loadMonitoringSchedulerEnv() {
   };
 }
 
+function loadShutdownTimeoutEnv() {
+  const raw = process.env.SHUTDOWN_TIMEOUT_MS;
+  const text = (raw ?? '').trim();
+
+  if (text === '') {
+    return SHUTDOWN_TIMEOUT_DEFAULT_MS;
+  }
+
+  const value = /^\d+$/.test(text) ? Number(text) : Number.NaN;
+  if (!Number.isInteger(value) || value < SHUTDOWN_TIMEOUT_MIN_MS || value > SHUTDOWN_TIMEOUT_MAX_MS) {
+    throw new TypeError(
+      `SHUTDOWN_TIMEOUT_MS inválido: é obrigatório um inteiro entre ${SHUTDOWN_TIMEOUT_MIN_MS} e ${SHUTDOWN_TIMEOUT_MAX_MS} ms.`
+    );
+  }
+
+  return value;
+}
+
 export function loadEnv() {
   const port = Number.parseInt(process.env.PORT ?? '', 10);
 
   return {
     host: process.env.HOST ?? '0.0.0.0',
     port: Number.isNaN(port) ? 3000 : port,
+    shutdownTimeoutMs: loadShutdownTimeoutEnv(),
     monitoringScheduler: loadMonitoringSchedulerEnv(),
   };
 }

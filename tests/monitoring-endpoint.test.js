@@ -34,6 +34,7 @@ const RUN_CONTRACT_KEYS = [
   'failedCount',
   'opportunityCount',
   'items',
+  'failureReason',
 ].sort();
 
 async function createTrip(overrides = {}) {

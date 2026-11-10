@@ -76,11 +76,13 @@ model PriceHistory {
 }
 
 // Execução registrada do ciclo de monitoramento (Dia 11.3).
-// Uma linha por execução: criada como RUNNING antes do ciclo, finalizada
-// sempre (COMPLETED ou FAILED) no finally — nunca RUNNING órfão.
+// Uma linha por execução: criada como RUNNING antes do ciclo e finalizada
+// como COMPLETED ou FAILED no desfecho. Um RUNNING cujo processo morreu é
+// recuperado como FAILED quando o heartbeat expira (ver monitoring.service).
 //
 // status: RUNNING | COMPLETED | FAILED. FAILED é falha GLOBAL do ciclo
-// (aborto); falhas por viagem são dados do relatório (items/failedCount).
+// (aborto ou recuperação de órfão); falhas por viagem são dados do relatório
+// (items/failedCount).
 // trigger: MANUAL | SCHEDULED — vocabulário fechado já nesta migration para
 // o agendador futuro não exigir mudança de schema.
 model MonitoringRun {
@@ -88,6 +90,10 @@ model MonitoringRun {
   status           String
   trigger          String
   startedAt        DateTime  @default(now()) @map("started_at")
+  // Renovado durante o ciclo. Um RUNNING com heartbeat antigo perde a posse
+  // e é marcado FAILED antes da próxima execução (nunca fica bloqueando o
+  // índice parcial para sempre).
+  heartbeatAt      DateTime  @default(now()) @map("heartbeat_at")
   finishedAt       DateTime? @map("finished_at")
   durationMs       Int?      @map("duration_ms")
   tripCount        Int       @default(0) @map("trip_count")
@@ -97,6 +103,8 @@ model MonitoringRun {
   failedCount      Int       @default(0) @map("failed_count")
   opportunityCount Int       @default(0) @map("opportunity_count")
   items            Json
+  // Motivo de FAILED (aborto global ou recuperação de execução órfã).
+  failureReason    String?   @map("failure_reason")
 
   @@index([startedAt])
   @@map("monitoring_runs")

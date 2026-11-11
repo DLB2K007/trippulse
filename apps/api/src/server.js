@@ -28,6 +28,7 @@ import { pathToFileURL } from 'node:url';
 import { buildApp } from './app.js';
 import { loadEnv, SHUTDOWN_TIMEOUT_DEFAULT_MS } from './config/env.js';
 import { createMonitoringScheduler } from './modules/monitoring/scheduler.js';
+import { configureFlightProviders } from './integrations/flight-providers/index.js';
 
 /**
  * Aguarda o idle do scheduler com prazo. `false` significa que o ciclo em voo
@@ -143,6 +144,28 @@ export async function startServer({
     })();
 
     return shutdownInFlight;
+  }
+
+  // Configura o registro ANTES de abrir a porta. Se a configuração falhar,
+  // nenhuma requisição pode encontrar um estado parcial e o listen nem é
+  // tentado. O fechamento do app é defensivo: ele ainda não está ouvindo.
+  try {
+    configureFlightProviders(env);
+  } catch (error) {
+    app.log.error(
+      `configuração dos provedores falhou: ${error instanceof Error ? error.message : error}`
+    );
+    try {
+      await app.close();
+    } catch (closeError) {
+      app.log.error(
+        `falha ao fechar após erro de configuração: ${
+          closeError instanceof Error ? closeError.message : closeError
+        }`
+      );
+    }
+    terminate(1);
+    return null;
   }
 
   let address;

@@ -63,6 +63,65 @@ function loadMonitoringSchedulerEnv() {
   };
 }
 
+// Provedor experimental SerpApi (Dia 11.8) — DESATIVADO por padrão.
+// Mesmo padrão de decisões do scheduler: D2 (fail-fast na config usada) e
+// D4 (boolean estrito). Sem flag habilitada E sem chave, o provedor NÃO é
+// registrado (a chave nunca entra no repositório).
+const SERPAPI_MAX_EXPANSIONS_MIN = 1;
+const SERPAPI_MAX_EXPANSIONS_MAX = 10;
+const SERPAPI_MAX_EXPANSIONS_DEFAULT = 1;
+
+function loadSerpApiEnv() {
+  const rawEnabled = process.env.SERPAPI_ENABLED;
+  const normalized = (rawEnabled ?? '').trim().toLowerCase();
+  const enabled = SCHEDULER_TRUTHY.has(normalized);
+
+  // D4: bool estrito com warn para valores não reconhecidos.
+  if (
+    rawEnabled !== undefined &&
+    normalized !== '' &&
+    !SCHEDULER_TRUTHY.has(normalized) &&
+    !SCHEDULER_KNOWN_OFF.has(normalized)
+  ) {
+    console.warn(
+      `SERPAPI_ENABLED='${rawEnabled}' não reconhecido: provedor SerpApi DESATIVADO (aceitos apenas 'true' ou '1').`
+    );
+  }
+
+  const rawApiKey = process.env.SERPAPI_API_KEY ?? '';
+  const apiKey = rawApiKey.trim();
+
+  // Flag ligada sem chave: não é erro (a chave é opcional por desenho), mas
+  // o provedor não será registrado — o operador precisa saber disso.
+  if (enabled && apiKey === '') {
+    console.warn(
+      'SERPAPI_ENABLED ativo sem SERPAPI_API_KEY: o provedor SerpApi NÃO será registrado.'
+    );
+  }
+
+  // Expansões: inteiro decimal estrito 1..10 (fórmula:
+  // requisições/ciclo = 1 + tokens expandidos). Fail-fast só quando o
+  // operador ligou o provedor E forneceu um valor inválido (D2).
+  const rawMax = process.env.SERPAPI_MAX_OUTBOUND_EXPANSIONS;
+  const maxProvided = rawMax !== undefined;
+  const maxText = (rawMax ?? '').trim();
+  const maxValue = /^\d+$/.test(maxText) ? Number(maxText) : Number.NaN;
+  const maxIsValid =
+    Number.isInteger(maxValue) && maxValue >= SERPAPI_MAX_EXPANSIONS_MIN && maxValue <= SERPAPI_MAX_EXPANSIONS_MAX;
+
+  if (enabled && maxProvided && !maxIsValid) {
+    throw new TypeError(
+      `SERPAPI_MAX_OUTBOUND_EXPANSIONS inválido: é obrigatório um inteiro entre ${SERPAPI_MAX_EXPANSIONS_MIN} e ${SERPAPI_MAX_EXPANSIONS_MAX} quando o provedor SerpApi está ativo.`
+    );
+  }
+
+  return {
+    enabled,
+    apiKey: apiKey === '' ? null : apiKey,
+    maxOutboundExpansions: maxIsValid ? maxValue : SERPAPI_MAX_EXPANSIONS_DEFAULT,
+  };
+}
+
 function loadShutdownTimeoutEnv() {
   const raw = process.env.SHUTDOWN_TIMEOUT_MS;
   const text = (raw ?? '').trim();
@@ -89,5 +148,6 @@ export function loadEnv() {
     port: Number.isNaN(port) ? 3000 : port,
     shutdownTimeoutMs: loadShutdownTimeoutEnv(),
     monitoringScheduler: loadMonitoringSchedulerEnv(),
+    serpapi: loadSerpApiEnv(),
   };
 }

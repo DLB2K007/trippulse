@@ -16,6 +16,10 @@ import { prisma } from '../../config/prisma.js';
 import { HttpError } from '../../shared/errors.js';
 import { isUuid } from '../../shared/uuid.js';
 import { lockTripRow } from '../../shared/trip-lock.js';
+import {
+  assertOnlySimulatedOffers,
+  assertOnlySimulatedProviders,
+} from '../../shared/real-barrier.js';
 import { getFlightProviders } from '../../integrations/flight-providers/index.js';
 import { normalizeFlightOffer } from '../../integrations/flight-providers/normalize.js';
 import {
@@ -57,6 +61,13 @@ export async function searchFlightsForTrip(tripId, { providers } = {}) {
     throw new HttpError(400, 'O identificador da viagem precisa ser um UUID válido.');
   }
 
+  // D6: resolve e valida o registro de providers antes de QUALQUER acesso ao
+  // banco. A lista vazia ou um provider malformado não deve provocar sequer a
+  // leitura da viagem; isso também vale para a pesquisa manual e para o
+  // scheduler, que compartilham este service.
+  const resolvedProviders = providers ?? getFlightProviders();
+  assertOnlySimulatedProviders(resolvedProviders);
+
   const trip = await prisma.trip.findUnique({ where: { id: tripId } });
 
   if (!trip) {
@@ -80,9 +91,6 @@ export async function searchFlightsForTrip(tripId, { providers } = {}) {
     returnDate: trip.endDate.toISOString().slice(0, 10),
   };
 
-  // DI de provedores para testes determinísticos (padrão do projeto); default
-  // mantém o registro real de providers.
-  const resolvedProviders = providers ?? getFlightProviders();
   const priorObservations = await prisma.priceHistory.count({
     // Histórico acumulado do percurso de observações anteriores, usado como
     // semente de variação de preços no provedor (nenhuma observação anterior
@@ -103,6 +111,13 @@ export async function searchFlightsForTrip(tripId, { providers } = {}) {
   );
 
   const offers = providerResults.flat();
+
+  // BARRA REAL — CAMADA DE DEFESA ADICIONAL, também fail-closed: uma oferta
+  // sem classificação SIMULATED + isSimulated true não segue para a transação.
+  // A barreira principal está ANTES dos providers; esta cobre um caminho
+  // futuro que produza uma oferta inconsistente após a normalização.
+  assertOnlySimulatedOffers(offers);
+
   const capturedConfig = tripSearchConfig(trip);
 
   // Transação curta: lock da linha da viagem -> relê a config -> compara com a

@@ -19,6 +19,10 @@ import { EventEmitter } from 'node:events';
 import { startServer } from '../apps/api/src/server.js';
 import { createMonitoringScheduler } from '../apps/api/src/modules/monitoring/scheduler.js';
 import { buildApp } from '../apps/api/src/app.js';
+import {
+  getFlightProviders,
+  resetFlightProviders,
+} from '../apps/api/src/integrations/flight-providers/index.js';
 
 const ENV_OFF = {
   host: '127.0.0.1',
@@ -175,6 +179,58 @@ test('bootstrap com scheduler ON: start DEPOIS do listen, uma única vez, com o 
   const closed = await boot.handle.shutdown();
   assert.equal(closed, true);
   assert.deepEqual(boot.exitCodes, [0]);
+});
+
+test('bootstrap: providers configurados ANTES do listen', async () => {
+  resetFlightProviders();
+  const stack = createFakeStack();
+  let providersAtListen = null;
+  const originalListen = stack.app.listen;
+
+  stack.app.listen = async (options) => {
+    providersAtListen = getFlightProviders();
+    return originalListen(options);
+  };
+
+  const handle = await startServer({
+    env: {
+      ...ENV_OFF,
+      serpapi: { enabled: true, apiKey: 'sk-synthetic', maxOutboundExpansions: 1 },
+    },
+    createApplication: () => stack.app,
+    createScheduler: stack.schedulerFactory,
+    signals: new EventEmitter(),
+    terminate: stack.terminate,
+  });
+
+  assert.notEqual(handle, null);
+  assert.equal(stack.counts.listen(), 1);
+  assert.ok(providersAtListen, 'registro precisa existir quando listen é chamado');
+  assert.equal(providersAtListen.some((provider) => provider.name === 'serpapi'), true);
+
+  await handle.shutdown();
+});
+
+test('bootstrap: falha ao configurar providers impede o listen', async () => {
+  const stack = createFakeStack();
+  const handle = await startServer({
+    env: {
+      ...ENV_OFF,
+      serpapi: { enabled: true, apiKey: 'sk-synthetic', maxOutboundExpansions: 0 },
+    },
+    createApplication: () => stack.app,
+    createScheduler: stack.schedulerFactory,
+    signals: new EventEmitter(),
+    terminate: stack.terminate,
+  });
+
+  assert.equal(handle, null);
+  assert.equal(stack.counts.listen(), 0, 'porta não pode abrir se a configuração falha');
+  assert.equal(stack.counts.close(), 1);
+  assert.deepEqual(stack.exitCodes, [1]);
+  assert.ok(
+    stack.logRecords.some((line) => line.startsWith('error:') && line.includes('configuração dos provedores falhou'))
+  );
 });
 
 test('listen() falhando: terminate(1), factory NUNCA invocada, ZERO handlers de sinal', async () => {

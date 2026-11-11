@@ -4,6 +4,7 @@
 import { prisma } from '../../config/prisma.js';
 import { HttpError } from '../../shared/errors.js';
 import { isUuid } from '../../shared/uuid.js';
+import { assertOnlySimulatedOffers } from '../../shared/real-barrier.js';
 
 // Identidade externa de uma oferta: mesma combinação de provedor + rota +
 // voo + partida representa o MESMO voo observado, mesmo que o preço mude.
@@ -121,6 +122,13 @@ export async function listOfferHistoryForTrip(tripId) {
 // snapshots parciais), e a comparação de configuração do flights.service é
 // atômica com as escritas. Chamadores que não têm transação usam o default.
 export async function persistOfferSnapshot(tripId, offers, tx = prisma) {
+  // DEFESA EM PROFUNDIDADE FAIL-CLOSED (Dia 11.8, correção D5): acesso
+  // direto à persistência também precisa provar SIMULATED. Não basta rejeitar
+  // a string REAL: classificação ausente/desconhecida, `isSimulated` ausente
+  // e combinações inconsistentes também falham ANTES de qualquer operação de
+  // banco (inclusive o primeiro findUnique).
+  assertOnlySimulatedOffers(offers);
+
   const observedAt = new Date();
   const snapshotResult = new Map();
 

@@ -36,6 +36,58 @@ test('externalKey combina provedor, rota, voo e partida de forma estável', () =
   );
 });
 
+// Correção da auditoria D5 — defesa em profundidade: o bloqueio de REAL não
+// pode depender exclusivamente do orquestrador (flights.service.js). Mesmo
+// que um caminho interno futuro chame persistOfferSnapshot diretamente com
+// ofertas REAL, nada é persistido: falha ALTO antes da primeira escrita.
+test('persistOfferSnapshot (D5): oferta REAL chamada DIRETAMENTE falha 503 antes de escrever', async (t) => {
+  const trip = await prisma.trip.create({
+    data: {
+      name: 'Teste D5 defesa real direta',
+      destination: 'Lisboa, Portugal',
+      startDate: new Date('2027-06-01'),
+      endDate: new Date('2027-06-10'),
+    },
+  });
+  t.after(async () => {
+    await prisma.trip.delete({ where: { id: trip.id } });
+  });
+
+  const realOffer = { ...FIXED_OFFER, dataClassification: 'REAL' };
+
+  await assert.rejects(
+    () => persistOfferSnapshot(trip.id, [realOffer]),
+    (error) => {
+      assert.equal(error.statusCode, 503);
+      assert.match(error.message, /Provedores reais ainda não estão liberados/);
+      return true;
+    }
+  );
+
+  // PROVA do D5: nem oferta, nem observação, nem histórico.
+  assert.equal(await prisma.flightOffer.count({ where: { tripId: trip.id } }), 0);
+  assert.equal(await prisma.priceHistory.count({ where: { flightOffer: { tripId: trip.id } } }), 0);
+});
+
+test('persistOfferSnapshot (D5): fluxo SIMULATED não é afetado pela defesa', async (t) => {
+  const trip = await prisma.trip.create({
+    data: {
+      name: 'Teste D5 simulated intacto',
+      destination: 'Lisboa, Portugal',
+      startDate: new Date('2027-06-01'),
+      endDate: new Date('2027-06-10'),
+    },
+  });
+  t.after(async () => {
+    await prisma.trip.delete({ where: { id: trip.id } });
+  });
+
+  const snapshot = await persistOfferSnapshot(trip.id, [FIXED_OFFER]);
+  assert.equal(snapshot.size, 1);
+  assert.equal(await prisma.flightOffer.count({ where: { tripId: trip.id } }), 1);
+  assert.equal(await prisma.priceHistory.count({ where: { flightOffer: { tripId: trip.id } } }), 1);
+});
+
 test('snapshot persiste oferta e histórico: FIRST_OBSERVATION > UNCHANGED > best', async (t) => {
   const trip = await prisma.trip.create({
     data: {

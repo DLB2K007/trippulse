@@ -24,7 +24,7 @@ Projeto em construção da **fundação backend** (primeira etapa). Atualmente e
 
 [![CI](https://github.com/DLB2K007/trippulse/actions/workflows/ci.yml/badge.svg)](https://github.com/DLB2K007/trippulse/actions/workflows/ci.yml)
 
-Funcionalidades futuras (provedores reais, agente de IA, notificações) ainda **não** estão implementadas.
+Funcionalidades futuras (exposição de provedores reais aos usuários, agente de IA, notificações) ainda **não** estão liberadas. O **adaptador experimental SerpApi** (Dia 11.8) existe e é testável, mas fica atrás da barreira `REAL` (503) e desligado por padrão — ver seção abaixo.
 
 ## Stack
 
@@ -40,7 +40,7 @@ npm test    # requer o banco ativo (docker compose up -d)
 ```
 
 - Executor: `node --test` nativo (sem dependências de teste), chamadas pela Fastify `app.inject()` — não abre porta.
-- Cobertura atual: validação e regras do CRUD (**origem canônica, imutabilidade de rota/período após ofertas e serialização pesquisa × PUT com provedor estacionado — Dia 11.6**); normalização para o padrão canônico e a barreira anti-`REAL`; identidade/`externalKey` da oferta; snapshot do histórico (`FIRST_OBSERVATION` → `UNCHANGED`) e `best`, **atomicidade do snapshot**; cascade de exclusão; regressão da validade das datas do provedor simulado e **determinismo da rota (origem derivada do texto)**; métricas puras de preço (limiares, mediana sem o preço atual, arredondamento, limites numéricos); endpoint de análise (`404`/`400`, viagem sem ofertas, classificações, dados simulados, repetibilidade); políticas de oportunidade (portões, motivos de exclusão, piso absoluto, recência, ranking por moeda, determinismo) e seu endpoint; agendador (timer único, after-complete, stop/start, `idle()`, 409 como skip, falha de logger); recuperação de `RUNNING` órfão por heartbeat, proteção de posse, renovação do heartbeat em ciclo real e timeout de shutdown; bootstrap (wiring só após `listen()`, shutdown idempotente, falhas de listen × pós-listen); parsing/isolamento das variáveis de ambiente.
+- Cobertura atual: validação e regras do CRUD (**origem canônica, imutabilidade de rota/período após ofertas e serialização pesquisa × PUT com provedor estacionado — Dia 11.6**); normalização para o padrão canônico e a barreira anti-`REAL`; identidade/`externalKey` da oferta; snapshot do histórico (`FIRST_OBSERVATION` → `UNCHANGED`) e `best`, **atomicidade do snapshot**; cascade de exclusão; regressão da validade das datas do provedor simulado e **determinismo da rota (origem derivada do texto)**; métricas puras de preço (limiares, mediana sem o preço atual, arredondamento, limites numéricos); endpoint de análise (`404`/`400`, viagem sem ofertas, classificações, dados simulados, repetibilidade); políticas de oportunidade (portões, motivos de exclusão, piso absoluto, recência, ranking por moeda, determinismo) e seu endpoint; agendador (timer único, after-complete, stop/start, `idle()`, 409 como skip, falha de logger); recuperação de `RUNNING` órfão por heartbeat, proteção de posse, renovação do heartbeat em ciclo real e timeout de shutdown; bootstrap (wiring só após `listen()`, shutdown idempotente, falhas de listen × pós-listen); parsing/isolamento das variáveis de ambiente; **pós-auditoria do Dia 11.8**: parser CSV estrito com linha nos erros e linha correta do cabeçalho após linhas vazias (D2), `flight_number` obrigatório e normalizado no mapeador SerpApi (D1), bloqueio fail-closed de provider REAL **antes** da chamada externa (D6), defesa fail-closed D5 em `persistOfferSnapshot`, round-trip com `return_date`/resposta mista/dedup de tokens/aborto total na 2ª requisição (D4) e registro de provedores memoizado e hermético nos testes (D7).
 
 ## CI
 
@@ -535,3 +535,39 @@ Comportamento:
 MONITORING_SCHEDULER_ENABLED=true
 MONITORING_SCHEDULER_INTERVAL_MS=900000
 ```
+
+### Provedor experimental SerpApi (Google Flights) — Dia 11.8
+
+Integração **experimental e isolada** a um primeiro provedor real de voos, sem compromisso comercial nesta etapa: nenhuma chamada paga é feita pelo código (o adaptador só é validado com fixtures sintéticas em teste, via `fetch` injetado).
+
+**Importante — barreira REAL intacta (duas camadas):** mesmo com o SerpApi registrado, **nenhuma oferta `REAL` é exposta aos usuários nem persistida no histórico de produção** nesta etapa. A pesquisa de viagens falha com `503` e o bloqueio acontece em **duas camadas** (`apps/api/src/modules/flights/flights.service.js`): (1) **antes da execução de qualquer provedor REAL** — a chamada externa nunca acontece (nem em pesquisa manual nem no ciclo do agendador), evitando créditos queimados sem resultado utilizável; (2) **após a normalização**, como defesa adicional para um provedor REAL que eventualmente chegue por caminho futuro. Nada é escrito no banco em nenhum caso. Além disso, `persistOfferSnapshot` (`apps/api/src/modules/offers/offers.service.js`) tem verificação própria: uma oferta `REAL` entregue diretamente à persistência falha com `503` antes da primeira escrita (defesa em profundidade). Liberar dados `REAL` é uma decisão explícita e futura.
+
+| Variável | Default | Efeito |
+|---|---|---|
+| `SERPAPI_ENABLED` | `false` | A camada de ambiente aceita texto `true` ou `1` e normaliza para boolean; qualquer outro valor desativa (não reconhecido gera `warn`). A configuração tipada entregue a `buildFlightProviders()` só ativa com `enabled === true`. |
+| `SERPAPI_API_KEY` | *(vazio)* | Chave da API, opcional e **não versionada**. Sem chave, o provedor não é registrado mesmo com a flag ativa. Existe exclusivamente no backend; nunca aparece em logs ou erros. |
+| `SERPAPI_MAX_OUTBOUND_EXPANSIONS` | `1` | Inteiro entre `1` e `10`. Quantos itinerários de ida são expandidos por ciclo em round-trips (via `departure_token`). Presente e inválido com a flag ativa falha o boot (`TypeError`); com a flag desativada é ignorado. |
+
+Como funciona:
+
+- **Registro condicional e memoizado** (`apps/api/src/integrations/flight-providers/index.js`): o simulado é sempre o padrão; o SerpApi só entra no registro com `enabled === true` **e** chave string não vazia. A camada de ambiente converte o texto explicitamente permitido (`SERPAPI_ENABLED=true` ou `1`) em boolean; `buildFlightProviders()` não aceita `1`, `'true'` ou `'false'` injetados diretamente como equivalentes a boolean. A config é validada no boot (`startServer` → `loadEnv()`) e o registro efetivo é construído **uma única vez**, antes de abrir a porta, sem reavaliar o ambiente a cada pesquisa.
+- **Resolver de aeroportos agnóstico** (`apps/api/src/integrations/airports/`): localidades canônicas da viagem (ex.: `São Paulo, São Paulo, Brasil`) são resolvidas em códigos IATA por um snapshot **local** do [OurAirports](https://ourairports.com/) (domínio público, 4.008 aeroportos com serviço comercial regular, gerado por `build-airport-snapshot.mjs`). Nenhuma requisição de rede acontece em runtime. `ident` é a chave canônica (o IATA nunca é primária); localidades ambíguas ou desconhecidas viram `UNRESOLVED` explícito — nunca o "primeiro match". Cidades multi-aeroporto e grafias divergentes (ex.: `Lisboa` → município `Lisbon` na fonte) passam por uma **tabela curada** auditável (São Paulo → GRU, CGH, VCP; Rio de Janeiro → GIG, SDU; etc.).
+- **Adaptador** (`apps/api/src/integrations/flight-providers/serpapi/serpapi-flight-provider.js`): `fetch` nativo injetável, suporte a IATA e `kgmid`, erros HTTP/timeout (AbortController)/JSON inválido tratados sem expor a chave, respostas vazias válidas (`[]`), round-trip em duas requisições via `departure_token`, com `return_date` na primeira requisição `type=1`. Um itinerário de round-trip **sem** `departure_token` é tratado como anomalia (erro), não como mercado vazio. O `flight_number` da ida é **obrigatório e normalizado**: ausente, `null`, vazio, só de espaços, números não positivos ou identificadores artificiais falham alto; espaços nas extremidades são removidos para não criar identidade externa artificial.
+- **Custo e cobertura**: `requisições por ciclo = 1 + tokens expandidos`. Com o default (`1`), um round-trip custa 2 requisições. **Cobertura parcial por desenho**: expandir apenas o(s) melhor(es) itinerário(s) de ida (seleção determinística por preço, duração, horário e companhia) não cobre todas as combinações ida × volta. Viagens só de ida não usam expansão.
+- **Round-trip — comportamentos documentados** (Dia 11.8, pós-auditoria): (a) a primeira requisição envia `type=1`, `outbound_date` e `return_date`; one-way envia `type=2` e não envia `return_date`; (b) em uma resposta com itinerários de ida com e sem `departure_token`, os **sem-token são descartados sem registro** — uma ida mais barata sem token pode ficar fora do resultado (coerente com a cobertura parcial; a anomalia só existe quando **nenhum** itinerário tem token); (c) `departure_token` **duplicado** é dedupado de forma determinística (mantém a 1ª ocorrência na ordem de seleção); (d) **falha em qualquer 2ª requisição** (HTTP, rede, JSON ou retorno vazio) **aborta a busca inteira** — não há resultado parcial de round-trip.
+- **Pendências registradas** (não assumidas): (1) a semântica exata do preço do round-trip combinado — hoje o preço do retorno da 2ª resposta é usado como preço do trip completo, a confirmar com fixtures reais; (2) base/impostos não decompostos pelo SerpApi (`null`); (3) horários dos legs são locais sem offset — as datas normalizadas usam apenas o dia; (4) `price_insights` é metadado de contexto do provedor (`relatedQuery.priceInsights`, não persistido) e **não** se mistura ao `PriceHistory` do TripPulse; (5) **D3 permanece aberta**: o conjunto mínimo de parâmetros da 2ª requisição do round-trip (a que envia `departure_token`) não pôde ser confirmado sem conta autorizada. A primeira requisição já envia `return_date`; a segunda continua com a conformidade real a validar com fixtures capturadas e proveniência quando houver ambiente adequado.
+
+```bash
+# ligar o provedor experimental em um .env local (exemplo; NÃO versionado)
+SERPAPI_ENABLED=true
+SERPAPI_API_KEY=sua-chave-do-serpapi
+SERPAPI_MAX_OUTBOUND_EXPANSIONS=1
+```
+
+Como atualizar o snapshot de aeroportos (manutenção de dados, sem rede em runtime):
+
+```bash
+node apps/api/src/integrations/airports/build-airport-snapshot.mjs
+```
+
+O script rebaixa os CSVs do OurAirports, aplica o filtro (serviço comercial regular + IATA + tipos large/medium/small) e regenera `apps/api/src/integrations/airports/data/airports-snapshot.json` com metadados de proveniência (data, SHA-256 das fontes, contagens, licença). O parser CSV (`csv.js`) é **estrito**: aspas em posição inválida, citação nunca fechada, conteúdo após o fechamento de uma citação e registros com contagem de colunas divergente do cabeçalho **falham alto com o número da linha** — dados malformados nunca são engolidos em silêncio. Para regeneração determinística, use `AIRPORT_SNAPSHOT_GENERATED_AT='2026-11-11T03:39:54.857Z'`; se os dados gerados diferirem do snapshot atual, o script aborta e exige `--force` após revisão. O snapshot atual está no **working tree**, ainda não rastreado, e precisa entrar na futura consolidação; ele não está commitado. A comparação 1:1 com os CSVs externos relatada em etapa anterior é histórica e não é reproduzível apenas com o repositório atual, pois os CSVs originais não estão versionados.

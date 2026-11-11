@@ -14,6 +14,9 @@ const ENV_KEYS = [
   'SHUTDOWN_TIMEOUT_MS',
   'PORT',
   'HOST',
+  'SERPAPI_ENABLED',
+  'SERPAPI_API_KEY',
+  'SERPAPI_MAX_OUTBOUND_EXPANSIONS',
 ];
 
 // Guarda restaura o ambiente após cada bloco (nenhuma variável "vaza").
@@ -189,4 +192,89 @@ test('sem .env: port/host mantêm os padrões históricos e scheduler permanece 
     assert.equal(env.host, '0.0.0.0');
     assert.equal(env.monitoringScheduler.enabled, false);
   });
+});
+
+// ------------------------------------------------- SerpApi (Dia 11.8)
+
+test('serpapi: default OFF, sem chave e 1 expansão (provedor não registrado)', () => {
+  withEnv({}, () => {
+    assert.deepEqual(loadEnv().serpapi, {
+      enabled: false,
+      apiKey: null,
+      maxOutboundExpansions: 1,
+    });
+  });
+});
+
+test('serpapi ENABLED estrito: apenas true/1 ativam; typos avisam e desativam (D4)', () => {
+  for (const raw of ['true', '1']) {
+    withEnv({ SERPAPI_ENABLED: raw }, () => {
+      assert.equal(loadEnv().serpapi.enabled, true, `raw='${raw}'`);
+    });
+  }
+
+  for (const raw of ['false', '0', 'off', 'no', '']) {
+    const capture = captureWarn();
+    try {
+      withEnv({ SERPAPI_ENABLED: raw }, () => {
+        assert.equal(loadEnv().serpapi.enabled, false, `raw='${raw}'`);
+      });
+    } finally {
+      assert.equal(capture.restore(), false, `raw='${raw}' é off de propósito`);
+    }
+  }
+
+  for (const raw of ['yes', 'sim', 'enabled']) {
+    const capture = captureWarn();
+    try {
+      withEnv({ SERPAPI_ENABLED: raw }, () => {
+        assert.equal(loadEnv().serpapi.enabled, false, `raw='${raw}'`);
+      });
+    } finally {
+      assert.equal(capture.restore(), true, `raw='${raw}' deveria warn`);
+    }
+  }
+});
+
+test('serpapi: chave é trimmada; ausente/vazia -> null com flag ligada warn', () => {
+  withEnv({ SERPAPI_ENABLED: '1', SERPAPI_API_KEY: '  sk-fake-123  ' }, () => {
+    assert.equal(loadEnv().serpapi.apiKey, 'sk-fake-123');
+  });
+
+  const capture = captureWarn();
+  try {
+    withEnv({ SERPAPI_ENABLED: '1', SERPAPI_API_KEY: '   ' }, () => {
+      assert.equal(loadEnv().serpapi.apiKey, null);
+    });
+  } finally {
+    assert.equal(capture.restore(), true, 'flag ligada sem chave deveria warn');
+  }
+});
+
+test('serpapi: maxOutboundExpansions aceita 1..10 e default 1 quando ausente', () => {
+  withEnv({ SERPAPI_ENABLED: '1', SERPAPI_API_KEY: 'k', SERPAPI_MAX_OUTBOUND_EXPANSIONS: '1' }, () => {
+    assert.equal(loadEnv().serpapi.maxOutboundExpansions, 1);
+  });
+  withEnv({ SERPAPI_ENABLED: '1', SERPAPI_API_KEY: 'k', SERPAPI_MAX_OUTBOUND_EXPANSIONS: '10' }, () => {
+    assert.equal(loadEnv().serpapi.maxOutboundExpansions, 10);
+  });
+  withEnv({ SERPAPI_ENABLED: '1', SERPAPI_API_KEY: 'k' }, () => {
+    assert.equal(loadEnv().serpapi.maxOutboundExpansions, 1);
+  });
+});
+
+test('serpapi D2: valor inválido de expansão com flag ATIVA faila alto (TypeError)', () => {
+  for (const raw of ['0', '-1', '11', 'abc', '', '2.5', '2abc', '1 2']) {
+    withEnv({ SERPAPI_ENABLED: '1', SERPAPI_API_KEY: 'k', SERPAPI_MAX_OUTBOUND_EXPANSIONS: raw }, () => {
+      assert.throws(() => loadEnv(), TypeError, `raw='${raw}'`);
+    });
+  }
+});
+
+test('serpapi D2: valor inválido com flag DESATIVADA é ignorado (usa default)', () => {
+  for (const raw of ['0', '11', 'abc']) {
+    withEnv({ SERPAPI_MAX_OUTBOUND_EXPANSIONS: raw }, () => {
+      assert.equal(loadEnv().serpapi.maxOutboundExpansions, 1, `raw='${raw}'`);
+    });
+  }
 });

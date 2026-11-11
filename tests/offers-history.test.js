@@ -22,6 +22,7 @@ async function createTrip() {
     url: '/trips',
     payload: {
       name: 'Teste historico consolidado',
+      origin: 'São Paulo, SP, Brasil',
       destination: 'Lisboa, Portugal',
       startDate: '2027-10-01',
       endDate: '2027-10-10',

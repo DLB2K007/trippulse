@@ -12,14 +12,15 @@ Projeto em construção da **fundação backend** (primeira etapa). Atualmente e
 - Endpoint de verificação de saúde `GET /health`.
 - Configuração por variáveis de ambiente.
 - Banco de dados PostgreSQL em Docker com Prisma ORM.
-- CRUD completo de viagens (`/trips`) com validação e tratamento de erros.
-- Pesquisa de passagens aéreas por viagem (`GET /trips/:id/flights`) com provedor **simulado**, ofertas normalizadas para o padrão interno e classificação obrigatória `SIMULATED`.
+- CRUD completo de viagens (`/trips`) com validação e tratamento de erros, **origem canônica** (Dia 11.6) e imutabilidade de rota/período após a primeira oferta (`409`), com pesquisas e atualizações serializadas por lock de linha no PostgreSQL.
+- Pesquisa de passagens aéreas por viagem (`GET /trips/:id/flights`) com provedor **simulado**, origem e destino canônicos da viagem, ofertas normalizadas para o padrão interno e classificação obrigatória `SIMULATED`.
 - Persistência das ofertas observadas e **histórico de preços** com comparativo (`FIRST_OBSERVATION`, `DROPPED`, `ROSE`, `UNCHANGED`) e melhor preço observado.
 - **Análise de preços por viagem** (`GET /trips/:tripId/analysis`), descritiva do histórico de cada oferta: `INSUFFICIENT_DATA`, `OPPORTUNITY`, `FAIR` e `ABOVE_HISTORY`, com critérios e limitações explícitos.
 - **Oportunidades de compra** (`GET /trips/:tripId/opportunities`): identificação determinística sobre a análise, com portões de elegibilidade, motivo explícito para cada exclusão, ranking separado por moeda e diferença histórica observada (não economia garantida).
 - **Suíte de testes automatizados** (`npm test`, runner nativo do Node com `app.inject()`).
 - **CI no GitHub Actions**: testes rodados a cada push na `main` e em pull requests, com PostgreSQL efêmero.
 - **Agendador automático do monitoramento** (Dias 11.4–11.5): executa o ciclo com `trigger: SCHEDULED` em intervalo configurável, **desativado por padrão**, com encerramento gracioso (timeout configurável), heartbeat e recuperação automática de execuções órfãs.
+- **Origem, imutabilidade de rota e serialização transacional** (Dia 11.6): viagens com origem canônica obrigatória em novos cadastros, campos de rota/período congelados após a primeira oferta e persistência de ofertas atômica (ofertas e observações commitam juntas), serializada por `SELECT ... FOR UPDATE` na linha da viagem.
 
 [![CI](https://github.com/DLB2K007/trippulse/actions/workflows/ci.yml/badge.svg)](https://github.com/DLB2K007/trippulse/actions/workflows/ci.yml)
 
@@ -39,7 +40,7 @@ npm test    # requer o banco ativo (docker compose up -d)
 ```
 
 - Executor: `node --test` nativo (sem dependências de teste), chamadas pela Fastify `app.inject()` — não abre porta.
-- Cobertura atual: validação e regras do CRUD; normalização para o padrão canônico e a barreira anti-`REAL`; identidade/`externalKey` da oferta; snapshot do histórico (`FIRST_OBSERVATION` → `UNCHANGED`) e `best`; cascade de exclusão; regressão da validade das datas do provedor simulado; métricas puras de preço (limiares, mediana sem o preço atual, arredondamento, limites numéricos); endpoint de análise (`404`/`400`, viagem sem ofertas, classificações, dados simulados, repetibilidade); políticas de oportunidade (portões, motivos de exclusão, piso absoluto, recência, ranking por moeda, determinismo) e seu endpoint; agendador (timer único, after-complete, stop/start, `idle()`, 409 como skip, falha de logger); recuperação de `RUNNING` órfão por heartbeat, proteção de posse, renovação do heartbeat em ciclo real e timeout de shutdown; bootstrap (wiring só após `listen()`, shutdown idempotente, falhas de listen × pós-listen); parsing/isolamento das variáveis de ambiente.
+- Cobertura atual: validação e regras do CRUD (**origem canônica, imutabilidade de rota/período após ofertas e serialização pesquisa × PUT com provedor estacionado — Dia 11.6**); normalização para o padrão canônico e a barreira anti-`REAL`; identidade/`externalKey` da oferta; snapshot do histórico (`FIRST_OBSERVATION` → `UNCHANGED`) e `best`, **atomicidade do snapshot**; cascade de exclusão; regressão da validade das datas do provedor simulado e **determinismo da rota (origem derivada do texto)**; métricas puras de preço (limiares, mediana sem o preço atual, arredondamento, limites numéricos); endpoint de análise (`404`/`400`, viagem sem ofertas, classificações, dados simulados, repetibilidade); políticas de oportunidade (portões, motivos de exclusão, piso absoluto, recência, ranking por moeda, determinismo) e seu endpoint; agendador (timer único, after-complete, stop/start, `idle()`, 409 como skip, falha de logger); recuperação de `RUNNING` órfão por heartbeat, proteção de posse, renovação do heartbeat em ciclo real e timeout de shutdown; bootstrap (wiring só após `listen()`, shutdown idempotente, falhas de listen × pós-listen); parsing/isolamento das variáveis de ambiente.
 
 ## CI
 
@@ -178,20 +179,23 @@ trippulse/
 ```json
 {
   "name": "Viagem Lisboa",
+  "origin": "São Paulo, SP, Brasil",
   "destination": "Lisboa, Portugal",
   "startDate": "2027-03-10",
   "endDate": "2027-03-20"
 }
 ```
 
-Erros retornados (`400`, `404`) seguem o formato padrão do Fastify, com `statusCode`, `error` e `message`. Em `POST`/`PUT` os campos mostrados são obrigatórios e `startDate` deve ser anterior ou igual a `endDate`; a forma do corpo é validada pelo JSON Schema do Fastify e as regras de negócio pelo service.
+Erros retornados (`400`, `404`, `409`) seguem o formato padrão do Fastify, com `statusCode`, `error` e `message`. Em `POST` os campos mostrados são obrigatórios (inclusive `origin`, texto canônico de localização no mesmo padrão do `destination`); em `PUT` o `origin` é opcional (ausente = preserva a armazenada). `startDate` deve ser anterior ou igual a `endDate`; a forma do corpo é validada pelo JSON Schema do Fastify e as regras de negócio pelo service.
+
+**Imutabilidade de rota/período (Dia 11.6):** após a primeira oferta persistida, `origin`, `destination`, `startDate` e `endDate` ficam congelados — alterar qualquer um deles retorna `409` e o `name` continua editável. Para pesquisar outra rota ou período, crie outra viagem. Viagens criadas antes do Dia 11.6 (sem origem) podem receber uma enquanto não tiverem ofertas; uma viagem sem origem não executa novas pesquisas (`409`) e a remoção continua liberada. As atualizações e as pesquisas são serializadas por lock de linha no PostgreSQL: uma alteração durante uma pesquisa em voo faz a pesquisa abortar com `409` sem persistir nada.
 
 Exemplos:
 
 ```bash
 # cadastrar
 curl -X POST http://localhost:3000/trips -H "Content-Type: application/json" \
-  -d '{"name":"Viagem Lisboa","destination":"Lisboa, Portugal","startDate":"2027-03-10","endDate":"2027-03-20"}'
+  -d '{"name":"Viagem Lisboa","origin":"São Paulo, SP, Brasil","destination":"Lisboa, Portugal","startDate":"2027-03-10","endDate":"2027-03-20"}'
 
 # listar
 curl http://localhost:3000/trips
@@ -209,7 +213,7 @@ curl -X DELETE http://localhost:3000/trips/<id>
 
 ### Pesquisa de passagens — simulado (`GET /trips/:tripId/flights`)
 
-Pesquisa ofertas de passagens para a viagem informada. **Todas as ofertas são simuladas** — a resposta traz `simulated: true` no envelope e `dataClassification: "SIMULATED"` em cada oferta, em conformidade com a regra de não apresentar dados fictícios como reais.
+Pesquisa ofertas de passagens para a viagem informada, usando **a origem cadastrada na viagem** (`query.origin` ecoa a origem canônica; a rota das ofertas é derivada deterministicamente do texto). **Todas as ofertas são simuladas** — a resposta traz `simulated: true` no envelope e `dataClassification: "SIMULATED"` em cada oferta, em conformidade com a regra de não apresentar dados fictícios como reais. Viagens sem origem (legadas) recebem `409` em vez de pesquisar.
 
 ```bash
 curl http://localhost:3000/trips/<tripId>/flights
@@ -222,14 +226,14 @@ Resposta (resumida):
   "simulated": true,
   "persisted": true,
   "providerCount": 1,
-  "query": { "destination": "Lisboa, Portugal", "departureDate": "2027-03-10", "returnDate": "2027-03-20" },
+  "query": { "origin": "São Paulo, SP, Brasil", "destination": "Lisboa, Portugal", "departureDate": "2027-03-10", "returnDate": "2027-03-20" },
   "offers": [
     {
       "provider": "simulated-airways",
       "isSimulated": true,
       "dataClassification": "SIMULATED",
       "type": "flight",
-      "route": { "origin": "GRU", "destination": "LIS" },
+      "route": { "origin": "SOP", "destination": "LIS" },
       "dates": { "departureDate": "...", "arrivalDate": "..." },
       "flight": { "airline": "...", "flightNumber": "...", "stops": 0, "cabinClass": "ECONOMY", "baggagePieces": 0, "refundable": false },
       "price": { "currency": "BRL", "total": 0, "base": 0, "taxes": 0 },
@@ -247,10 +251,10 @@ Resposta (resumida):
 
 Notas técnicas:
 
-- A pesquisa é **simulada e determinística na identidade**: a mesma viagem referencia sempre os mesmos voos (companhias, números, rota). Os **preços variam a cada pesquisa** (semente por observação), simulando a oscilação do mercado e exercitando o histórico.
-- Cada pesquisa **persiste um snapshot**: ofertas novas (por identidade de provedor/rota/voo/partida) criam registros em `flight_offers`; toda observação cria uma linha em `price_history`.
+- A pesquisa é **simulada e determinística na identidade**: a mesma viagem referencia sempre os mesmos voos (companhias, números, rota) — **incluindo a rota**: origem e destino derivam deterministicamente do texto canônico da viagem. Os **preços variam a cada pesquisa** (semente por observação), simulando a oscilação do mercado e exercitando o histórico.
+- Cada pesquisa **persiste um snapshot atomicamente**: ofertas novas (por identidade de provedor/rota/voo/partida) criam registros em `flight_offers`; toda observação cria uma linha em `price_history` — ofertas e observações commitam ou roll back juntas, e a persistência só ocorre se a configuração da viagem não mudou durante a pesquisa (`SELECT ... FOR UPDATE` na linha da viagem).
 - Cada oferta devolvida inclui `history` com `current`, `previous`, `best` (menor preço observado) e `trend` (`FIRST_OBSERVATION`, `DROPPED`, `ROSE` ou `UNCHANGED`).
-- A origem é fictícia, pois o modelo de viagem ainda não possui cidade de origem.
+- A origem é texto canônico cadastrado na viagem (Dia 11.6); a resolução em aeroportos/códigos IATA reais permanece pendente para o provedor real.
 - A exclusão de uma viagem apaga em cascata suas ofertas e observações de preço.
 - Provedores reais serão adicionados na pasta `integrations/flight-providers/` mantendo o mesmo contrato — o restante do sistema não muda.
 
@@ -268,7 +272,7 @@ Retorna, lendo **apenas do banco**, todas as ofertas já observadas para a viage
       "provider": "simulated-airways",
       "dataClassification": "SIMULATED",
       "type": "flight",
-      "route": { "origin": "GRU", "destination": "LIS" },
+      "route": { "origin": "SOP", "destination": "LIS" },
       "dates": { "departureDate": "...", "arrivalDate": "..." },
       "flight": { "airline": "...", "flightNumber": "...", "stops": 0, "cabinClass": "ECONOMY", "baggagePieces": 0, "refundable": false },
       "externalKey": "simulated-airways|GRU|LIS|...",
@@ -326,7 +330,7 @@ Resposta (exemplo ilustrativo; valores de uma oferta com 4 observações):
       "dataClassification": "SIMULATED",
       "simulated": true,
       "type": "flight",
-      "route": { "origin": "GRU", "destination": "LIS" },
+      "route": { "origin": "SOP", "destination": "LIS" },
       "dates": { "departureDate": "...", "arrivalDate": "..." },
       "flight": { "airline": "...", "flightNumber": "...", "stops": 0, "cabinClass": "ECONOMY", "baggagePieces": 0, "refundable": false },
       "externalKey": "simulated-airways|GRU|LIS|...",
@@ -421,7 +425,7 @@ Resposta (exemplo ilustrativo; avaliou 2 ofertas, 1 elegível e 1 simulada):
       "externalKey": "fixture-airlines|GRU|LIS|...",
       "provider": "fixture-airlines",
       "dataClassification": "REAL",
-      "route": { "origin": "GRU", "destination": "LIS" },
+      "route": { "origin": "SOP", "destination": "LIS" },
       "dates": { "departureDate": "...", "arrivalDate": "..." },
       "flight": { "airline": "...", "flightNumber": "...", "stops": 0, "cabinClass": "ECONOMY", "baggagePieces": 0, "refundable": false },
       "current": { "total": 800, "currency": "BRL" },

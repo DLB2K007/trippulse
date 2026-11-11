@@ -12,9 +12,11 @@
 // - A identidade dos voos (companhias, números, rota) é determinística por
 //   consulta; os preços variam através da `variationSeed` (injetada pelo
 //   orquestrador), simulando a oscilação de preços do mercado.
-
-// Hubs de origem fictícios (a viagem só possui destino no modelo atual).
-const ORIGIN_HUBS = ['GRU', 'GIG', 'CNF', 'BSB'];
+// - ROTA COMPLETAMENTE DETERMINÍSTICA (Dia 11.6): origem e destino derivam do
+//   TEXTO CANÔNICO da consulta (ex.: "Curitiba, Paraná, Brasil" -> "CUR") —
+//   não há mais hub aleatório, então a mesma consulta sempre produz a mesma
+//   rota (e, portanto, o mesmo externalKey). Códigos reais de aeroporto/IATA
+//   permanecem pendentes para o provedor real.
 
 const CARRIERS = [
   { carrierName: 'Simulated Airways', carrierCode: 'SIA' },
@@ -40,9 +42,10 @@ function createSeededRandom(seedText) {
   };
 }
 
-// Deriva um "código IATA" determinístico a partir do texto do destino.
-function deriveAirportCode(destinationText) {
-  const letters = destinationText
+// Deriva um "código IATA" sintético e determinístico a partir do texto canônico
+// de um local (usado para origem e destino; não é um código aeroportuário real).
+function deriveAirportCode(locationText) {
+  const letters = locationText
     .toUpperCase()
     .replace(/[^A-Z]/g, '');
 
@@ -50,7 +53,7 @@ function deriveAirportCode(destinationText) {
     return letters.slice(0, 3);
   }
 
-  // Destino sem letras suficientes: código derivado do hash (inviável em provedor real).
+  // Local sem letras suficientes: código derivado do texto (inviável em provedor real).
   return letters.padEnd(3, 'X').slice(0, 3) || 'XXX';
 }
 
@@ -81,7 +84,15 @@ export const simulatedFlightProvider = {
     const priceRandom = createSeededRandom(`${JSON.stringify(query)}|variation=${variationSeed}`);
 
     const destinationCode = deriveAirportCode(query.destination);
-    const originCode = query.origin ?? ORIGIN_HUBS[Math.floor(identityRandom() * ORIGIN_HUBS.length)];
+    // Barreira defensiva: a origem é exigida na prática (o orquestrador
+    // valida antes), mas o provedor não silencia a ausência — uma consulta
+    // sem origem é um bug de chamada, não algo a inferir.
+    if (typeof query.origin !== 'string' || query.origin.trim().length === 0) {
+      throw new TypeError(
+        'O provedor simulado exige query.origin como texto canônico de localização.'
+      );
+    }
+    const originCode = deriveAirportCode(query.origin);
 
     const offerCount = 3 + Math.floor(identityRandom() * 3); // 3 a 5 ofertas
 

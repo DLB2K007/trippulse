@@ -114,14 +114,20 @@ export async function listOfferHistoryForTrip(tripId) {
 }
 // Persiste o snapshot de uma pesquisa e calcula o comparativo de cada oferta.
 // Retorna um Map: externalKey -> { observedAt, current, previous, best, trend }.
-export async function persistOfferSnapshot(tripId, offers) {
+//
+// `tx` (Dia 11.6): client transacional OPCIONAL. No fluxo de pesquisa,
+// persistOfferSnapshot roda DENTRO da transação que segura o lock da linha da
+// viagem — ofertas e observações commitam ou roll back juntas (nada de
+// snapshots parciais), e a comparação de configuração do flights.service é
+// atômica com as escritas. Chamadores que não têm transação usam o default.
+export async function persistOfferSnapshot(tripId, offers, tx = prisma) {
   const observedAt = new Date();
   const snapshotResult = new Map();
 
   for (const offer of offers) {
     const externalKey = buildOfferExternalKey(offer);
 
-    const existingOffer = await prisma.flightOffer.findUnique({
+    const existingOffer = await tx.flightOffer.findUnique({
       where: { tripId_externalKey: { tripId, externalKey } },
     });
 
@@ -130,12 +136,12 @@ export async function persistOfferSnapshot(tripId, offers) {
 
     if (existingOffer) {
       flightOfferRow = existingOffer;
-      previousObservation = await prisma.priceHistory.findFirst({
+      previousObservation = await tx.priceHistory.findFirst({
         where: { offerId: existingOffer.id, observedAt: { lt: observedAt } },
         orderBy: { observedAt: 'desc' },
       });
     } else {
-      flightOfferRow = await prisma.flightOffer.create({
+      flightOfferRow = await tx.flightOffer.create({
         data: {
           tripId,
           provider: offer.provider,
@@ -156,7 +162,7 @@ export async function persistOfferSnapshot(tripId, offers) {
       });
     }
 
-    const currentObservation = await prisma.priceHistory.create({
+    const currentObservation = await tx.priceHistory.create({
       data: {
         offerId: flightOfferRow.id,
         currency: offer.price.currency,
@@ -167,7 +173,7 @@ export async function persistOfferSnapshot(tripId, offers) {
       },
     });
 
-    const bestObservation = await prisma.priceHistory.findFirst({
+    const bestObservation = await tx.priceHistory.findFirst({
       where: { offerId: flightOfferRow.id },
       orderBy: { total: 'asc' },
     });

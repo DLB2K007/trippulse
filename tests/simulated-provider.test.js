@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { simulatedFlightProvider } from '../apps/api/src/integrations/flight-providers/simulated/simulated-flight-provider.js';
 
 const query = {
+  origin: 'Curitiba, Paraná, Brasil',
   destination: 'Lisboa, Portugal',
   departureDate: '2027-03-10',
   returnDate: '2027-03-20',
@@ -16,6 +17,25 @@ test('devolve entre 3 e 5 ofertas', async () => {
   const offers = await simulatedFlightProvider.search(query);
 
   assert.ok(offers.length >= 3 && offers.length <= 5);
+});
+
+test('rota determinística: origem e destino derivam do texto canônico (Dia 11.6)', async () => {
+  const offers = await simulatedFlightProvider.search(query);
+
+  // "Curitiba..." -> CUR; "Lisboa..." -> LIS (primeiras 3 letras A-Z).
+  for (const offer of offers) {
+    assert.equal(offer.route.origin_iata, 'CUR');
+    assert.equal(offer.route.destination_iata, 'LIS');
+  }
+});
+
+test('barreira: consulta sem origin lança TypeError alto (nada de hub inferido)', async () => {
+  const { origin, ...semOrigin } = query;
+
+  await assert.rejects(
+    simulatedFlightProvider.search(semOrigin),
+    (error) => error instanceof TypeError && /origin/.test(error.message)
+  );
 });
 
 test('todas as datas/horarios sao ISO validos (regressao do T010 invalido)', async () => {

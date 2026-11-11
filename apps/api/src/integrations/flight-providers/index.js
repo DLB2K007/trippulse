@@ -7,7 +7,13 @@
 //   search: (query) => Promise<Array<RawFlightOffer>>
 // }
 //
-// query: { origin?: string, destination: string, departureDate: string, returnDate?: string }
+// query: { origin: string, destination: string, departureDate: string, returnDate?: string }
+//
+// origin e destination são TEXTOS CANÔNICOS de localização (ex.:
+// "Curitiba, Paraná, Brasil"). O orquestrador (flights.service) garante a
+// presença de origin — viagens sem origem não pesquisam — e provedores
+// defensivos falham alto se ela faltar. A resolução em aeroportos/IATA reais
+// continua pendente para o provedor real.
 //
 // Provedores reais (ex.: Amadeus, Kiwi) serão adicionados criando uma nova pasta
 // em flight-providers/ e registrando uma entrada aqui, sem alterar services ou rotas.

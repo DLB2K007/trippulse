@@ -78,3 +78,33 @@ test('snapshot persiste oferta e histórico: FIRST_OBSERVATION > UNCHANGED > bes
   const offersInDb = await prisma.flightOffer.count({ where: { tripId: trip.id } });
   assert.equal(offersInDb, 1);
 });
+
+test('snapshot é atômico: falha no meio não deixa oferta nem observação (Dia 11.6)', async (t) => {
+  const trip = await prisma.trip.create({
+    data: {
+      name: 'Teste snapshot atômico',
+      destination: 'Lisboa, Portugal',
+      startDate: new Date('2027-06-01'),
+      endDate: new Date('2027-06-10'),
+    },
+  });
+  t.after(async () => {
+    await prisma.trip.delete({ where: { id: trip.id } });
+  });
+
+  // Segunda oferta com departureDate inválido: a criação da oferta falha no
+  // MEIO do snapshot, depois da primeira oferta + observação já escritas na
+  // transação. O rollback precisa apagar TAMBÉM o que veio antes.
+  const brokenOffer = {
+    ...FIXED_OFFER,
+    flight: { ...FIXED_OFFER.flight, flightNumber: 'SIA9999' },
+    dates: { ...FIXED_OFFER.dates, departureDate: 'não-é-uma-data' },
+  };
+
+  await assert.rejects(
+    prisma.$transaction((tx) => persistOfferSnapshot(trip.id, [FIXED_OFFER, brokenOffer], tx))
+  );
+
+  assert.equal(await prisma.flightOffer.count({ where: { tripId: trip.id } }), 0);
+  assert.equal(await prisma.priceHistory.count({ where: { flightOffer: { tripId: trip.id } } }), 0);
+});

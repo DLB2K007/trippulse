@@ -4,9 +4,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import pg from 'pg';
+
 import { buildApp } from '../apps/api/src/app.js';
 import { prisma } from '../apps/api/src/config/prisma.js';
 import { searchFlightsForTrip } from '../apps/api/src/modules/flights/flights.service.js';
+
+const { Client } = pg;
 
 const app = buildApp();
 
@@ -171,6 +175,247 @@ test('segunda pesquisa compara com a anterior e nao duplica ofertas', async (t) 
 
   const offerCount = await prisma.flightOffer.count({ where: { tripId: flightTripId } });
   assert.equal(offerCount, offers.length); // identidade dedup e não aumenta
+});
+
+// ---------------------------------------------------------------------------
+// TESTE DETERMINÍSTICO DE CONCORRÊNCIA (fechamento do Dia 11.9)
+//
+// Por que não `Promise.all`: disparar as duas requisições juntas não prova que
+// elas disputaram o MESMO lock — se uma terminasse antes da outra chegar, o
+// teste passaria sem nunca exercitar a serialização.
+//
+// Estratégia: a primeira requisição é PARQUEADA dentro da sua transação, logo
+// depois de `lockTripRow`, na primeira escrita em `flight_offers` (a conexão de
+// controle mantém `LOCK TABLE flight_offers IN SHARE MODE`, compatível com
+// SELECT e incompatível com INSERT). Enquanto ela está parqueada, o lock da
+// linha da viagem continua retido — em PostgreSQL, `SELECT ... FOR UPDATE`
+// segura `RowShareLock` na relação até o fim da transação, e é isso que o
+// catálogo mostra.
+//
+// A PARTIR DAÍ a concorrência é provada por observação real do PostgreSQL:
+//   - quem executou `lockTripRow` tem `pg_locks.mode = 'RowShareLock'` em
+//     `trips` (SELECT comum só pega `AccessShareLock`);
+//   - a segunda requisição aparece em `pg_stat_activity` com
+//     `wait_event_type = 'Lock'` e `pg_blocking_pids()` apontando para o pid
+//     que detém o `RowShareLock` de `trips`;
+//   - a espera pendente dela é em `transactionid` (lock de linha), e ela não
+//     adquiriu nenhum lock `RowExclusiveLock` em `flight_offers` — ou seja, não
+//     chegou à fase de escrita.
+//
+// Sem `lockTripRow`, este teste FALHA: a primeira requisição nunca apareceria
+// com `RowShareLock` em `trips` (o passo 1 estoura o timeout) e a segunda não
+// teria um `transactionid` bloqueado por ela — as duas apenas disputariam o
+// `SHARE` de `flight_offers` na escrita, cujo bloqueador não é o detentor do
+// lock da viagem, e o passo 2 estouraria o timeout.
+//
+// LIMITE ARQUITETURAL DECLARADO: o provedor roda ANTES da transação (chamada
+// externa nunca segura lock — ver flights.service.js). Portanto a segunda
+// requisição também consulta o provedor enquanto a primeira detém o lock; o
+// que o lock serializa é a fase de leitura pós-lock + persistência. O teste
+// prova exatamente isso: a segunda não inicia a escrita nem conclui o snapshot.
+// ---------------------------------------------------------------------------
+
+// Polling por estado observável. O `delay` NÃO é o mecanismo de sincronização:
+// ele apenas espaça releituras de um estado que precisa existir de fato; se não
+// existir, o teste falha por timeout.
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForState(check, { label, timeoutMs = 10_000, intervalMs = 10 }) {
+  const deadline = Date.now() + timeoutMs;
+
+  for (;;) {
+    const value = await check();
+    if (value) return value;
+    if (Date.now() > deadline) {
+      throw new Error(`Timeout aguardando ${label}`);
+    }
+    await delay(intervalMs);
+  }
+}
+
+// Pids que executaram `SELECT ... FOR UPDATE` em `trips` e continuam com a
+// transação aberta (o lock de relação só é liberado no fim da transação).
+async function tripRowLockHolders() {
+  return prisma.$queryRawUnsafe(
+    `SELECT DISTINCT l.pid::int AS pid
+       FROM pg_locks l
+      WHERE l.locktype = 'relation'
+        AND l.relation = 'trips'::regclass
+        AND l.mode = 'RowShareLock'
+        AND l.granted`
+  );
+}
+
+// Backends bloqueados por um pid específico. `pg_blocking_pids` resolve a
+// cadeia real de espera (inclui o caso de lock de linha, em que o bloqueio
+// aparece como espera por `transactionid`, não por tuple lock).
+async function backendsBlockedBy(pid) {
+  return prisma.$queryRawUnsafe(
+    `SELECT a.pid::int AS waiter_pid,
+            a.wait_event_type,
+            a.wait_event,
+            pg_blocking_pids(a.pid) AS blockers
+       FROM pg_stat_activity a
+      WHERE a.pid <> $1
+        AND a.wait_event_type = 'Lock'
+        AND $1 = ANY (pg_blocking_pids(a.pid))`,
+    pid
+  );
+}
+
+// Primeira escrita em `flight_offers` esperando o `SHARE` da conexão de
+// controle: só existe quando uma requisição já passou por `lockTripRow` e
+// chegou à persistência.
+async function flightOffersWriteWaiters() {
+  const rows = await prisma.$queryRawUnsafe(
+    `SELECT count(*)::int AS total
+       FROM pg_locks
+      WHERE locktype = 'relation'
+        AND relation = 'flight_offers'::regclass
+        AND mode = 'RowExclusiveLock'
+        AND NOT granted`
+  );
+  return rows[0].total;
+}
+
+test('duas pesquisas concorrentes disputam o lock da viagem (determinístico)', async (t) => {
+  const created = await app.inject({
+    method: 'POST',
+    url: '/trips',
+    payload: validTripPayload({ name: 'Lock da viagem (determinístico)' }),
+  });
+  const trip = created.json();
+
+  // Conexão de controle separada do pool do Prisma. `SHARE` é compatível com
+  // SELECT (contagens pré-lock, findUnique) e incompatível com INSERT: a
+  // primeira requisição estaciona DENTRO da transação, depois de lockTripRow,
+  // na primeira escrita em flight_offers.
+  const blocker = new Client({ connectionString: process.env.DATABASE_URL });
+  await blocker.connect();
+
+  t.after(async () => {
+    try {
+      await blocker.query('ROLLBACK');
+    } catch {
+      // Fora de transação: o rollback de encerramento já foi feito no teste.
+    }
+    await blocker.end();
+    await app.inject({ method: 'DELETE', url: `/trips/${trip.id}` });
+  });
+
+  await blocker.query('BEGIN');
+  await blocker.query('LOCK TABLE "flight_offers" IN SHARE MODE');
+
+  let firstSettled = false;
+  let secondSettled = false;
+
+  const firstPromise = app
+    .inject({ method: 'GET', url: `/trips/${trip.id}/flights` })
+    .then((response) => {
+      firstSettled = true;
+      return response;
+    });
+
+  // 1) A primeira requisição JÁ executou `lockTripRow` (RowShareLock em
+  //    `trips`) E está parqueada na escrita, ou seja, sua transação segue
+  //    aberta segurando o lock da linha da viagem.
+  const firstHolder = await waitForState(
+    async () => {
+      const holders = await tripRowLockHolders();
+      if (holders.length !== 1) return null;
+      const waiters = await flightOffersWriteWaiters();
+      if (waiters !== 1) return null;
+      return holders[0];
+    },
+    { label: 'lock da viagem + parqueamento na escrita da primeira requisição' }
+  );
+  assert.equal(firstSettled, false, 'a primeira requisição está parqueada dentro da transação');
+
+  // 2) Só então a segunda requisição é iniciada.
+  const secondPromise = app
+    .inject({ method: 'GET', url: `/trips/${trip.id}/flights` })
+    .then((response) => {
+      secondSettled = true;
+      return response;
+    });
+
+  // 3) Evidência de que a segunda chegou ao MESMO lock e está bloqueada por
+  //    quem o detém: `pg_blocking_pids` a liga ao pid do `RowShareLock` de
+  //    `trips` e a espera pendente é por `transactionid` (lock de linha).
+  const contention = await waitForState(
+    async () => {
+      const blocked = await backendsBlockedBy(firstHolder.pid);
+      return blocked.length === 1 ? blocked[0] : null;
+    },
+    { label: 'segunda requisição bloqueada pelo detentor do lock da viagem' }
+  );
+  assert.notEqual(contention.waiter_pid, firstHolder.pid, 'o waiter é outro backend');
+  assert.equal(contention.wait_event, 'transactionid', 'espera em lock de linha da viagem');
+  assert.deepEqual(
+    contention.blockers.map((pid) => Number(pid)),
+    [firstHolder.pid],
+    'a segunda requisição está bloqueada exatamente por quem detém o lock da viagem'
+  );
+
+  // 4) A segunda não avançou para a escrita: continua existindo UM único
+  //    pedido de RowExclusiveLock em flight_offers (o da primeira, parqueada).
+  assert.equal(
+    await flightOffersWriteWaiters(),
+    1,
+    'a segunda requisição não chegou à fase de escrita'
+  );
+  assert.equal(secondSettled, false, 'a segunda requisição não ultrapassou o lock');
+
+  // 5) Nada foi persistido por nenhuma das duas enquanto a primeira segura o
+  //    lock e a segunda espera por ele.
+  assert.equal(
+    await prisma.flightOffer.count({ where: { tripId: trip.id } }),
+    0,
+    'nenhuma oferta persistida enquanto o lock está retido pela primeira'
+  );
+  assert.equal(
+    await prisma.priceHistory.count({ where: { flightOffer: { tripId: trip.id } } }),
+    0,
+    'nenhuma observação persistida antes da liberação'
+  );
+
+  // 6) Libera a primeira (fim do bloqueio de escrita); a transação dela
+  //    commita e a segunda prossegue.
+  await blocker.query('ROLLBACK');
+
+  const [first, second] = [await firstPromise, await secondPromise];
+  assert.equal(secondSettled, true, 'a segunda prosseguiu depois da liberação');
+
+  assert.equal(first.statusCode, 200);
+  assert.equal(second.statusCode, 200);
+
+  const offers = first.json().offers;
+  assert.ok(offers.length >= 3);
+  assert.equal(second.json().offers.length, offers.length);
+
+  const offerCount = await prisma.flightOffer.count({ where: { tripId: trip.id } });
+  assert.equal(offerCount, offers.length, 'identidade deduplicada, sem ofertas duplicadas');
+
+  const observations = await prisma.priceHistory.findMany({
+    where: { flightOffer: { tripId: trip.id } },
+    orderBy: { sequence: 'asc' },
+  });
+  assert.equal(observations.length, offers.length * 2, 'cada pesquisa gravou uma observação por oferta');
+  assert.equal(
+    new Set(observations.map((observation) => observation.sequence)).size,
+    observations.length,
+    'sequence única mesmo com pesquisas concorrentes'
+  );
+
+  const history = await app.inject({ method: 'GET', url: `/trips/${trip.id}/offers/history` });
+  assert.equal(history.statusCode, 200);
+  for (const offer of history.json().offers) {
+    assert.equal(offer.observations.length, 2);
+    assert.ok(offer.current);
+    assert.ok(offer.previous);
+  }
 });
 
 test('DELETE da viagem aplica cascade em ofertas e historicos', async () => {

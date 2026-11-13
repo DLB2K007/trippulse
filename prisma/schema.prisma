@@ -70,13 +70,18 @@ model PriceHistory {
   offerId    String   @map("offer_id") @db.Uuid
   currency   String
   total      Float
-  base       Float
-  taxes      Float
+  // Decomposição opcional: provedores podem não separar tarifa e impostos.
+  // Ausência é preservada como NULL, nunca convertida em zero.
+  base       Float?
+  taxes      Float?
   observedAt DateTime @map("observed_at")
+  // Sequência global gerada pelo PostgreSQL. Desempata exclusivamente
+  // observações com o mesmo observed_at; não substitui a cronologia.
+  sequence   BigInt   @unique @default(autoincrement())
 
   flightOffer FlightOffer @relation(fields: [offerId], references: [id], onDelete: Cascade)
 
-  @@index([offerId, observedAt])
+  @@index([offerId, observedAt, sequence])
   @@map("price_history")
 }
 

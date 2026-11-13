@@ -21,6 +21,7 @@ Projeto em construção da **fundação backend** (primeira etapa). Atualmente e
 - **CI no GitHub Actions**: testes rodados a cada push na `main` e em pull requests, com PostgreSQL efêmero.
 - **Agendador automático do monitoramento** (Dias 11.4–11.5): executa o ciclo com `trigger: SCHEDULED` em intervalo configurável, **desativado por padrão**, com encerramento gracioso (timeout configurável), heartbeat e recuperação automática de execuções órfãs.
 - **Origem, imutabilidade de rota e serialização transacional** (Dia 11.6): viagens com origem canônica obrigatória em novos cadastros, campos de rota/período congelados após a primeira oferta e persistência de ofertas atômica (ofertas e observações commitam juntas), serializada por `SELECT ... FOR UPDATE` na linha da viagem.
+- **Histórico determinístico** (Dia 11.9): cada observação recebe uma `sequence` BIGINT global interna; a ordem canônica é `observedAt ASC, sequence ASC`, e `base`/`taxes` agora são opcionais (ausência vira `NULL`, nunca zero). A `sequence` não é exposta na API.
 
 [![CI](https://github.com/DLB2K007/trippulse/actions/workflows/ci.yml/badge.svg)](https://github.com/DLB2K007/trippulse/actions/workflows/ci.yml)
 
@@ -36,22 +37,46 @@ Funcionalidades futuras (exposição de provedores reais aos usuários, agente d
 ## Testes
 
 ```bash
-npm test    # requer o banco ativo (docker compose up -d)
+npm test    # exige DATABASE_URL (aplicação) e TEST_DATABASE_URL (banco de testes isolado, diferente do da aplicação); ver abaixo
 ```
 
 - Executor: `node --test` nativo (sem dependências de teste), chamadas pela Fastify `app.inject()` — não abre porta.
-- Cobertura atual: validação e regras do CRUD (**origem canônica, imutabilidade de rota/período após ofertas e serialização pesquisa × PUT com provedor estacionado — Dia 11.6**); normalização para o padrão canônico e a barreira anti-`REAL`; identidade/`externalKey` da oferta; snapshot do histórico (`FIRST_OBSERVATION` → `UNCHANGED`) e `best`, **atomicidade do snapshot**; cascade de exclusão; regressão da validade das datas do provedor simulado e **determinismo da rota (origem derivada do texto)**; métricas puras de preço (limiares, mediana sem o preço atual, arredondamento, limites numéricos); endpoint de análise (`404`/`400`, viagem sem ofertas, classificações, dados simulados, repetibilidade); políticas de oportunidade (portões, motivos de exclusão, piso absoluto, recência, ranking por moeda, determinismo) e seu endpoint; agendador (timer único, after-complete, stop/start, `idle()`, 409 como skip, falha de logger); recuperação de `RUNNING` órfão por heartbeat, proteção de posse, renovação do heartbeat em ciclo real e timeout de shutdown; bootstrap (wiring só após `listen()`, shutdown idempotente, falhas de listen × pós-listen); parsing/isolamento das variáveis de ambiente; **pós-auditoria do Dia 11.8**: parser CSV estrito com linha nos erros e linha correta do cabeçalho após linhas vazias (D2), `flight_number` obrigatório e normalizado no mapeador SerpApi (D1), bloqueio fail-closed de provider REAL **antes** da chamada externa (D6), defesa fail-closed D5 em `persistOfferSnapshot`, round-trip com `return_date`/resposta mista/dedup de tokens/aborto total na 2ª requisição (D4) e registro de provedores memoizado e hermético nos testes (D7).
+- Cobertura atual: validação e regras do CRUD (**origem canônica, imutabilidade de rota/período após ofertas e serialização pesquisa × PUT com provedor estacionado — Dia 11.6**); normalização para o padrão canônico e a barreira anti-`REAL`; identidade/`externalKey` da oferta; snapshot do histórico (`FIRST_OBSERVATION` → `UNCHANGED`) e `best`, **atomicidade do snapshot**; cascade de exclusão; regressão da validade das datas do provedor simulado e **determinismo da rota (origem derivada do texto)**; métricas puras de preço (limiares, mediana sem o preço atual, arredondamento, limites numéricos); endpoint de análise (`404`/`400`, viagem sem ofertas, classificações, dados simulados, repetibilidade); políticas de oportunidade (portões, motivos de exclusão, piso absoluto, recência, ranking por moeda, determinismo) e seu endpoint; agendador (timer único, after-complete, stop/start, `idle()`, 409 como skip, falha de logger); recuperação de `RUNNING` órfão por heartbeat, proteção de posse, renovação do heartbeat em ciclo real e timeout de shutdown; bootstrap (wiring só após `listen()`, shutdown idempotente, falhas de listen × pós-listen); parsing/isolamento das variáveis de ambiente; **pós-auditoria do Dia 11.8**: parser CSV estrito com linha nos erros e linha correta do cabeçalho após linhas vazias (D2), `flight_number` obrigatório e normalizado no mapeador SerpApi (D1), bloqueio fail-closed de provider REAL **antes** da chamada externa (D6), defesa fail-closed D5 em `persistOfferSnapshot`, round-trip com `return_date`/resposta mista/dedup de tokens/aborto total na 2ª requisição (D4) e registro de provedores memoizado e hermético nos testes (D7); **Dia 11.9:** migration com backfill determinístico, ordem canônica `observedAt`/`sequence`, `current`/`previous`/`best`, `base`/`taxes` nulos, ausência de BigInt na serialização e atomicidade da migration; **fechamento do Dia 11.9:** concorrência HTTP determinística com disputa real pelo lock da viagem (observação de `pg_locks`), atomicidade de **dados** e schema no rollback e isolamento do teste da migration por `TEST_DATABASE_URL`.
+
+### Teste da migration: banco descartável obrigatório
+
+`tests/price-history-migration.test.js` **não usa `DATABASE_URL`**. Ele exige `TEST_DATABASE_URL`, apontando para um PostgreSQL descartável cujo nome de banco contenha `test` (ex.: `trippulse_test_migration`). A validação roda **antes de qualquer conexão** e rejeita: variável ausente, URL malformada, protocolo diferente de `postgresql`, banco sem `test` no nome e uma URL equivalente à `DATABASE_URL` da aplicação. Não existe fallback e nenhuma credencial é impressa nos erros.
+
+Exemplo local (container efêmero, sem volume):
+
+```bash
+docker run --rm -d --name trippulse-test-pg \
+  -e POSTGRES_USER=trippulse -e POSTGRES_PASSWORD=trippulse -e POSTGRES_DB=trippulse \
+  -p 127.0.0.1:5544:5432 postgres:17-alpine
+docker exec trippulse-test-pg psql -U trippulse -d postgres \
+  -c 'CREATE DATABASE trippulse_test_migration'
+
+export DATABASE_URL='postgresql://trippulse:trippulse@127.0.0.1:5544/trippulse'
+export TEST_DATABASE_URL='postgresql://trippulse:trippulse@127.0.0.1:5544/trippulse_test_migration'
+
+npm run db:deploy   # aplica as migrations no banco da aplicação
+npm test            # a migration usa exclusivamente TEST_DATABASE_URL
+docker rm -f trippulse-test-pg
+```
+
+> Nunca use o banco de desenvolvimento (`localhost:5433`) como `TEST_DATABASE_URL`.
 
 ## CI
 
 `.github/workflows/ci.yml` roda em cada push para `main` e em pull requests direcionados a `main`:
 
 1. Sobe um serviço efêmero `postgres:17-alpine` na rede do runner.
-2. `npm ci` (o `postinstall` executa `prisma generate`).
-3. `npm run db:deploy` (`prisma migrate deploy`) aplica as migrations no banco de teste.
-4. `npm test` — qualquer teste falhando interrompe o workflow (❌ falha verificável no PR).
+2. Cria o banco isolado `trippulse_test_migration` (destino exclusivo do teste da migration) no mesmo serviço.
+3. `npm ci` (o `postinstall` executa `prisma generate`).
+4. `npm run db:deploy` (`prisma migrate deploy`) aplica as migrations no banco da aplicação **e** no banco do teste de migration.
+5. `npm test` com `DATABASE_URL` (aplicação) e `TEST_DATABASE_URL` (migration) apontando para bancos distintos — qualquer teste falhando interrompe o workflow (❌ falha verificável no PR).
 
-O banco de teste usa as mesmas credenciais de exemplo do desenvolvimento local (`docker-compose.yml`/`.env.example`, porta 5432 no runner) — nenhum dado real ou segredo de produção está envolvido.
+O teste da migration rejeita `TEST_DATABASE_URL` ausente ou equivalente à `DATABASE_URL`; por isso o workflow provisiona dois bancos separados no mesmo serviço. Ambos usam as mesmas credenciais de exemplo do desenvolvimento local (`docker-compose.yml`/`.env.example`, porta 5432 no runner) — nenhum dado real ou segredo de produção está envolvido.
 
 O job aparece como check nos pull requests. Para que o merge seja **bloqueado automaticamente** quando ele falhar, o check `Testes (Node 24 + PostgreSQL 17)` precisa ser exigido em **Settings → Branches → Branch protection rules** da `main` (opção "Require status checks to pass"). Sem essa configuração, o check é executado e exibido, mas não impede o merge.
 
@@ -253,7 +278,10 @@ Notas técnicas:
 
 - A pesquisa é **simulada e determinística na identidade**: a mesma viagem referencia sempre os mesmos voos (companhias, números, rota) — **incluindo a rota**: origem e destino derivam deterministicamente do texto canônico da viagem. Os **preços variam a cada pesquisa** (semente por observação), simulando a oscilação do mercado e exercitando o histórico.
 - Cada pesquisa **persiste um snapshot atomicamente**: ofertas novas (por identidade de provedor/rota/voo/partida) criam registros em `flight_offers`; toda observação cria uma linha em `price_history` — ofertas e observações commitam ou roll back juntas, e a persistência só ocorre se a configuração da viagem não mudou durante a pesquisa (`SELECT ... FOR UPDATE` na linha da viagem).
+- A persistência interna (`persistOfferSnapshot`) **exige o client de uma transação interativa já aberta** e não possui fallback para o Prisma global. O fluxo de produção abre a transação, adquire `lockTripRow` e passa esse client; chamadas sem `tx` falham antes de qualquer operação no banco.
 - Cada oferta devolvida inclui `history` com `current`, `previous`, `best` (menor preço observado) e `trend` (`FIRST_OBSERVATION`, `DROPPED`, `ROSE` ou `UNCHANGED`).
+- A observação atual (`current`) é a última na ordem canônica, mesmo que a observação recém-inserida tenha timestamp anterior; empates de `observedAt` usam a `sequence` interna. `base` e `taxes` podem ser `null` quando o provedor não os decompõe.
+- O `observedAt` de topo do snapshot é o **instante da captura**; o `current.observedAt` exposto no histórico consolidado é o instante da **última observação pela ordem canônica**. Em cenário de observação fora de ordem, os dois valores podem diferir.
 - A origem é texto canônico cadastrado na viagem (Dia 11.6); a resolução em aeroportos/códigos IATA reais permanece pendente para o provedor real.
 - A exclusão de uma viagem apaga em cascata suas ofertas e observações de preço.
 - Provedores reais serão adicionados na pasta `integrations/flight-providers/` mantendo o mesmo contrato — o restante do sistema não muda.
@@ -291,6 +319,8 @@ Retorna, lendo **apenas do banco**, todas as ofertas já observadas para a viage
 ```bash
 curl http://localhost:3000/trips/<tripId>/offers/history
 ```
+
+**Ordem e contrato (Dia 11.9):** as observações são ordenadas por `observedAt ASC, sequence ASC`. `current` é o último item dessa ordem; `previous` é o imediatamente anterior (comparação lexicográfica composta); `best` usa `total ASC, observedAt ASC, sequence ASC`. A `sequence` é interna, não aparece em `observations`, `current`, `previous` nem `best`, e os campos `base`/`taxes` preservam `null` quando ausentes. O `observedAt` de topo do snapshot de `/flights` é o instante da captura e não é necessariamente o `observedAt` de `current` quando a série recebe uma observação fora de ordem.
 
 ### Análise de preços (`GET /trips/:tripId/analysis`)
 
@@ -555,7 +585,7 @@ Como funciona:
 - **Adaptador** (`apps/api/src/integrations/flight-providers/serpapi/serpapi-flight-provider.js`): `fetch` nativo injetável, suporte a IATA e `kgmid`, erros HTTP/timeout (AbortController)/JSON inválido tratados sem expor a chave, respostas vazias válidas (`[]`), round-trip em duas requisições via `departure_token`, com `return_date` na primeira requisição `type=1`. Um itinerário de round-trip **sem** `departure_token` é tratado como anomalia (erro), não como mercado vazio. O `flight_number` da ida é **obrigatório e normalizado**: ausente, `null`, vazio, só de espaços, números não positivos ou identificadores artificiais falham alto; espaços nas extremidades são removidos para não criar identidade externa artificial.
 - **Custo e cobertura**: `requisições por ciclo = 1 + tokens expandidos`. Com o default (`1`), um round-trip custa 2 requisições. **Cobertura parcial por desenho**: expandir apenas o(s) melhor(es) itinerário(s) de ida (seleção determinística por preço, duração, horário e companhia) não cobre todas as combinações ida × volta. Viagens só de ida não usam expansão.
 - **Round-trip — comportamentos documentados** (Dia 11.8, pós-auditoria): (a) a primeira requisição envia `type=1`, `outbound_date` e `return_date`; one-way envia `type=2` e não envia `return_date`; (b) em uma resposta com itinerários de ida com e sem `departure_token`, os **sem-token são descartados sem registro** — uma ida mais barata sem token pode ficar fora do resultado (coerente com a cobertura parcial; a anomalia só existe quando **nenhum** itinerário tem token); (c) `departure_token` **duplicado** é dedupado de forma determinística (mantém a 1ª ocorrência na ordem de seleção); (d) **falha em qualquer 2ª requisição** (HTTP, rede, JSON ou retorno vazio) **aborta a busca inteira** — não há resultado parcial de round-trip.
-- **Pendências registradas** (não assumidas): (1) a semântica exata do preço do round-trip combinado — hoje o preço do retorno da 2ª resposta é usado como preço do trip completo, a confirmar com fixtures reais; (2) base/impostos não decompostos pelo SerpApi (`null`); (3) horários dos legs são locais sem offset — as datas normalizadas usam apenas o dia; (4) `price_insights` é metadado de contexto do provedor (`relatedQuery.priceInsights`, não persistido) e **não** se mistura ao `PriceHistory` do TripPulse; (5) **D3 permanece aberta**: o conjunto mínimo de parâmetros da 2ª requisição do round-trip (a que envia `departure_token`) não pôde ser confirmado sem conta autorizada. A primeira requisição já envia `return_date`; a segunda continua com a conformidade real a validar com fixtures capturadas e proveniência quando houver ambiente adequado.
+- **Pendências registradas** (não assumidas): (1) a semântica exata do preço do round-trip combinado — hoje o preço do retorno da 2ª resposta é usado como preço do trip completo, a confirmar com fixtures reais; (2) base/impostos não decompostos pelo SerpApi são persistidos como `NULL` (o schema do Dia 11.9 permite a ausência sem convertê-la em zero); (3) horários dos legs são locais sem offset — as datas normalizadas usam apenas o dia; (4) `price_insights` é metadado de contexto do provedor (`relatedQuery.priceInsights`, não persistido) e **não** se mistura ao `PriceHistory` do TripPulse; (5) **D3 permanece aberta**: o conjunto mínimo de parâmetros da 2ª requisição do round-trip (a que envia `departure_token`) não pôde ser confirmado sem conta autorizada. A primeira requisição já envia `return_date`; a segunda continua com a conformidade real a validar com fixtures capturadas e proveniência quando houver ambiente adequado.
 
 ```bash
 # ligar o provedor experimental em um .env local (exemplo; NÃO versionado)
@@ -570,4 +600,4 @@ Como atualizar o snapshot de aeroportos (manutenção de dados, sem rede em runt
 node apps/api/src/integrations/airports/build-airport-snapshot.mjs
 ```
 
-O script rebaixa os CSVs do OurAirports, aplica o filtro (serviço comercial regular + IATA + tipos large/medium/small) e regenera `apps/api/src/integrations/airports/data/airports-snapshot.json` com metadados de proveniência (data, SHA-256 das fontes, contagens, licença). O parser CSV (`csv.js`) é **estrito**: aspas em posição inválida, citação nunca fechada, conteúdo após o fechamento de uma citação e registros com contagem de colunas divergente do cabeçalho **falham alto com o número da linha** — dados malformados nunca são engolidos em silêncio. Para regeneração determinística, use `AIRPORT_SNAPSHOT_GENERATED_AT='2026-11-11T03:39:54.857Z'`; se os dados gerados diferirem do snapshot atual, o script aborta e exige `--force` após revisão. O snapshot atual está no **working tree**, ainda não rastreado, e precisa entrar na futura consolidação; ele não está commitado. A comparação 1:1 com os CSVs externos relatada em etapa anterior é histórica e não é reproduzível apenas com o repositório atual, pois os CSVs originais não estão versionados.
+O script rebaixa os CSVs do OurAirports, aplica o filtro (serviço comercial regular + IATA + tipos large/medium/small) e regenera `apps/api/src/integrations/airports/data/airports-snapshot.json` com metadados de proveniência (data, SHA-256 das fontes, contagens, licença). O parser CSV (`csv.js`) é **estrito**: aspas em posição inválida, citação nunca fechada, conteúdo após o fechamento de uma citação e registros com contagem de colunas divergente do cabeçalho **falham alto com o número da linha** — dados malformados nunca são engolidos em silêncio. Para regeneração determinística, use `AIRPORT_SNAPSHOT_GENERATED_AT='2026-11-11T03:39:54.857Z'`; se os dados gerados diferirem do snapshot atual, o script aborta e exige `--force` após revisão. O snapshot atual está **versionado** no commit `c55238c` (Dia 11.8 publicado); não há arquivo de snapshot pendente de rastreamento. A comparação 1:1 com os CSVs externos relatada em etapa anterior é histórica e não é reproduzível apenas com o repositório atual, pois os CSVs originais não estão versionados.

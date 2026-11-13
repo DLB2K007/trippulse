@@ -66,16 +66,14 @@
 // ORDENAÇÃO E EMPATES:
 //
 // 11. A série é ordenada por `observedAt` crescente, e a última observação é o
-//    preço atual. Empates (mesmo instante) são resolvidos pela ORDEM DE ENTRADA:
-//    Array.prototype.sort é estável por especificação (ES2019), então o
-//    resultado é determinístico para a mesma entrada.
-// 12. NÃO existe critério secundário confiável no modelo atual: PriceHistory tem
-//    apenas `id` (UUID v4 aleatório, sem relação com a ordem dos fatos) e
-//    `observedAt` (sem `createdAt`). Ordenar por `id` seria arbitrário, não
-//    cronológico — então não é usado. Consequência documentada: duas
-//    observações no mesmo instante têm ordem definida por quem monta a série;
-//    o chamador (service) deve entregar a série em ordem estável e, se quiser
-//    desempate real, precisará de uma coluna de sequência/criação no futuro.
+//    preço atual. Empates (mesmo instante) preservam a ORDEM DE ENTRADA:
+//    Array.prototype.sort é estável por especificação (ES2019). O service
+//    entrega a série na ordem canônica `observedAt ASC, sequence ASC`, portanto
+//    duas observações no mesmo instante chegam na ordem determinística da
+//    sequence e o núcleo puro não precisa (nem deve) conhecer BigInt ou Prisma.
+// 12. `sequence` é um detalhe interno do PriceHistory usado apenas para
+//    desempatar timestamps iguais; nunca substitui `observedAt` nem aparece na
+//    resposta pública. `id` continua sendo UUID v4 e não é usado como ordem.
 // 13. Observações inválidas são DESCARTADAS e contadas em
 //    `invalidObservationCount`: total não numérico, não finito, <= 0, moeda
 //    vazia, data inválida, total positivo que arredonda para zero centavos
@@ -137,7 +135,8 @@
 //   simulado, 3.000 sementes). Nenhum limiar pode ser calibrado com simulação;
 //   a classificação é validada por fixtures, não pelos dados simulados.
 // - Variações abaixo de ~0,5% são indistinguíveis de arredondamento de centavos.
-// - Empates de `observedAt` não têm desempate cronológico real (ver item 12).
+// - Empates de `observedAt` são desempatados pela sequence interna fornecida
+//   pelo service; o número em si não é exposto ao consumidor.
 
 export const ANALYSIS_DEFAULTS = Object.freeze({
   // Observações ANTERIORES necessárias para poder classificar (total >= 4).
@@ -344,8 +343,9 @@ function validateOptions(options) {
 
 // Descarta observações inutilizáveis (total não numérico, zero ou negativo,
 // moeda ausente, data inválida) e ordena cronologicamente por observedAt.
-// Empates mantêm a ordem de entrada (sort estável): não há desempate confiável
-// no modelo de dados — ver itens 11 e 12 do cabeçalho.
+// Empates mantêm a ordem de entrada (sort estável): o service entrega a série
+// na ordem canônica `observedAt ASC, sequence ASC` — ver itens 11 e 12 do
+// cabeçalho. O núcleo puro não conhece sequence, Prisma nem BigInt.
 function normalizeObservations(observations) {
   if (!Array.isArray(observations)) {
     throw new TypeError('A série de observações precisa ser um array.');
@@ -389,7 +389,8 @@ function toMoney(cents, currency) {
  *
  * @param {Array<{total: number, currency: string, observedAt: string}>} observations
  *   Observações em qualquer ordem; a última cronologicamente é o preço atual.
- *   Empates de observedAt seguem a ordem de entrada.
+ *   Empates de observedAt seguem a ordem de entrada (o service fornece a
+ *   ordem canônica observedAt ASC, sequence ASC).
  * @param {{minPreviousObservations?: number, opportunityDropPct?: number, aboveHistoryPct?: number}} [options]
  *   Objeto simples; chaves desconhecidas e valores inválidos lançam TypeError.
  * @returns {object} métricas descritivas + trend + classification

@@ -24,6 +24,10 @@ jobs:
     # commitadas no docker-compose.yml/.env.example (dev local, sem dado real).
     env:
       DATABASE_URL: postgresql://trippulse:trippulse@localhost:5432/trippulse?schema=public
+      # Banco SEPARADO, criado abaixo, exclusivo do teste da migration. Não é
+      # o mesmo alvo de DATABASE_URL — o teste rejeita essa situação — e não
+      # depende do banco da aplicação.
+      TEST_DATABASE_URL: postgresql://trippulse:trippulse@localhost:5432/trippulse_test_migration?schema=public
 
     services:
       db:
@@ -58,10 +62,22 @@ jobs:
       - name: Instalar dependências (com prisma generate)
         run: npm ci
 
+      # O teste da migration exige um banco descartável próprio, distinto do
+      # banco da aplicação. Criado no mesmo serviço efêmero (mesma versão de
+      # PostgreSQL de referência do projeto).
+      - name: Criar banco isolado do teste de migration
+        run: |
+          node --input-type=module -e "import pg from 'pg'; const c = new pg.Client({ connectionString: 'postgresql://trippulse:trippulse@localhost:5432/postgres' }); await c.connect(); await c.query('CREATE DATABASE trippulse_test_migration'); await c.end();"
+
       # Usa o mesmo script do fluxo local (`prisma migrate deploy`), sem
       # duplicar o contrato de migrations dentro do workflow.
       - name: Aplicar migrations no banco de teste
         run: npm run db:deploy
+
+      - name: Aplicar migrations no banco do teste de migration
+        run: npm run db:deploy
+        env:
+          DATABASE_URL: postgresql://trippulse:trippulse@localhost:5432/trippulse_test_migration?schema=public
 
       - name: Executar suíte de testes
         run: npm test

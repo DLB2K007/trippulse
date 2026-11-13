@@ -39,8 +39,8 @@ async function createTrip(t, name) {
   return trip;
 }
 
-function observation(total, observedAt, currency = 'BRL') {
-  return { total, currency, base: total, taxes: 0, observedAt: new Date(observedAt) };
+function observation(total, observedAt, currency = 'BRL', extra = {}) {
+  return { total, currency, base: total, taxes: 0, observedAt: new Date(observedAt), ...extra };
 }
 
 async function createOffer(tripId, { flightNumber, observations, dataClassification = 'SIMULATED' }) {
@@ -259,6 +259,35 @@ test('classifica OPPORTUNITY, FAIR e ABOVE_HISTORY com historico suficiente', as
 
   // Oportunidade descreve o passado da própria oferta, nunca uma recomendação.
   assert.ok(body.limitations.some((note) => note.includes('Não é recomendação de compra')));
+});
+
+test('serie empatada usa sequence interna e preserva base/taxes nulos na analise', async (t) => {
+  const trip = await createTrip(t, 'Teste empate e decomposição opcional');
+
+  await createOffer(trip.id, {
+    flightNumber: 'EMPATE',
+    observations: [
+      observation(1000, '2027-01-01T10:00:00.000Z', 'BRL', { base: null, taxes: null }),
+      observation(1000, '2027-01-02T10:00:00.000Z', 'BRL', { base: null, taxes: 100 }),
+      observation(1000, '2027-01-03T10:00:00.000Z', 'BRL', { base: 900, taxes: null }),
+      observation(800, '2027-01-03T10:00:00.000Z', 'BRL', { base: null, taxes: null }),
+    ],
+  });
+
+  const res = await getAnalysis(trip.id);
+  assert.equal(res.statusCode, 200);
+
+  const body = res.json();
+  const analysis = body.offers[0].analysis;
+
+  assert.equal(analysis.observationCount, 4);
+  assert.equal(analysis.current.total, 800);
+  assert.equal(analysis.current.observedAt, '2027-01-03T10:00:00.000Z');
+  assert.equal(analysis.previous.total, 1000);
+  assert.equal(analysis.trend, 'DROPPED');
+  assert.equal(analysis.classification, 'OPPORTUNITY');
+  assert.equal(JSON.stringify(body).includes('"sequence"'), false);
+  assert.doesNotThrow(() => JSON.parse(JSON.stringify(body)));
 });
 
 test('identifica dados simulados e nao os confunde com reais', async (t) => {

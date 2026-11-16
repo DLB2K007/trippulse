@@ -1,7 +1,7 @@
 # Relatório de continuidade — TripPulse
 
-> Atualizado em 2026-11-16. Cobre os **Dias 1 a 11.9** e o **D3**: o **Dia 11.3 está publicado em `46acf4a`**, o **Dia 11.4 em `83eb1ec`**, o **Dia 11.5 em `e4109eb`**, o **Dia 11.6 em `fab9eac`**, o **Dia 11.8 em `c55238c`**, o **Dia 11.9 em `72864543a36babdf2522af32558b524e2b2447a7`** e o **D3 em `6abba27d15f6500f8d3aa12b0f7479b6d3161137`**; `main == origin/main == 6abba27` e a árvore de trabalho estava limpa na auditoria pós-push.
-> O CI validou o Dia 9 em `fdfb7a7` (run `42520790068`, verde); os Dias 11.1/11.2/11.3 estão publicados em `origin/main` (11.3 em `46acf4a`), o 11.4 também foi publicado (`83eb1ec`), o 11.5 foi publicado com CI success (`e4109eb`), o 11.6 foi publicado (`fab9eac`), o 11.8 foi publicado com CI success (run `43106273261`), o 11.9 foi publicado com CI success (run `43460301273`) e o D3 foi validado pelo CI success (run `43788295629`). A **Fase 4 (OpenAPI 3.1 + Swagger UI) foi implementada no working tree em 16/11/2026** (§14.13) e corrigida após auditoria independente (§14.14), sem commit/push; o planejamento original permanece preservado no §14.
+> Atualizado em 2026-11-16. Cobre os **Dias 1 a 11.9** e o **D3**: o **Dia 11.3 está publicado em `46acf4a`**, o **Dia 11.4 em `83eb1ec`**, o **Dia 11.5 em `e4109eb`**, o **Dia 11.6 em `fab9eac`**, o **Dia 11.8 em `c55238c`**, o **Dia 11.9 em `72864543a36babdf2522af32558b524e2b2447a7`**, o **D3 em `6abba27d15f6500f8d3aa12b0f7479b6d3161137`** e a **Fase 4 em `a68bf73eb001bc9d70484186a4b98a4a53b82334`**; `main == origin/main == a68bf73` e a árvore de trabalho estava limpa na auditoria pós-push.
+> O CI validou o Dia 9 em `fdfb7a7` (run `42520790068`, verde); os Dias 11.1/11.2/11.3 estão publicados em `origin/main` (11.3 em `46acf4a`), o 11.4 também foi publicado (`83eb1ec`), o 11.5 foi publicado com CI success (`e4109eb`), o 11.6 foi publicado (`fab9eac`), o 11.8 foi publicado com CI success (run `43106273261`), o 11.9 foi publicado com CI success (run `43460301273`) e o D3 foi validado pelo CI success (run `43788295629`). A **Fase 4 (OpenAPI 3.1 + Swagger UI) foi implementada e corrigida em 16/11/2026** (§14.13 e §14.14) e **publicada em `a68bf73`**; o CI #14 (`43884861309`) concluiu com `success`. A **Fase 5 foi planejada em 16/11/2026** (§15), sem chamada real, sem alteração de código e com `REAL` bloqueado.
 > Em 2026-11-08 o histórico foi reescrito para corrigir a autoria: todos os 14 commits agora são `DLB2K007 <danielbordini027@gmail.com>`. Os hashes citados neste relatório já são os novos; os antigos não existem mais na `main`.
 > Documento de contexto oficial do projeto: **`docs/contexto.md`** (o usuário pode referir-se a ele por outros nomes, como "PROJECT_CONTEXT.md" — é sempre este arquivo).
 > Versões anteriores deste relatório cobrem o estado até o Dia 5 (commit `9605f03`).
@@ -67,7 +67,7 @@ Ao longo de 11 dias incrementais, o TripPulse saiu de documento vazio para um **
 - **Serialização por linha (`SELECT ... FOR UPDATE`)**: novo `shared/trip-lock.js` com `lockTripRow(tx, tripId)`, adquirido **dentro** de transações interativas curtas (`$transaction` com `timeout: 10_000`, `maxWait: 5_000`). `updateTrip` é transacional: lock → relê a linha → conta ofertas **pós-lock** → aplica a política → atualiza. A pesquisa captura a configuração antes do provedor, chama o provedor **fora** de qualquer transação e, só depois do retorno, abre a transação: lock → relê a config → compara com a capturada (divergente → `409`, nada persistido) → snapshot atômico.
 - **Snapshot atômico**: `persistOfferSnapshot(tripId, offers, tx = prisma)` recebe o client transacional — ofertas e observações commitam ou roll back juntas; nenhuma gravação parcial. (**Comportamento anterior ao Dia 11.9**: o fallback `tx = prisma` foi removido — hoje `tx` é obrigatório e validado estruturalmente; ver §12.)
 - **Simulador determinístico na rota**: `ORIGIN_HUBS` (hub aleatório) removido; origem e destino derivam do texto canônico por `deriveAirportCode` ("Curitiba, Paraná, Brasil" → `CUR`; "São Paulo, SP, Brasil" → `SOP`, pois o filtro `[A-Z]` remove o "ã"). Consulta sem `origin` lança `TypeError` (barreira, não inferência). `SIMULATED` preservado; IATA real permanece fora do escopo.
-- **Validação (histórico do Dia 11.6)**: **188/188 testes** em 16 arquivos × 3 rodadas (175 → 188: +10 em `api.test.js` — origem, imutabilidade, corridas com provedor estacionado via promessas adiadas —, +2 no simulador, +1 de atomicidade do snapshot), rodada focada 45/45, `git diff --check` limpo, smoke real com trip com origem e pesquisa `CUR→LIS` (viagem de smoke removida do banco local). Esse total histórico antecede o Dia 11.9; o estado atual tem **322 declarações `test(...)` em 24 arquivos** e **323 resultados reportados pelo runner** (o commit publicado `7286454` tem 306/307; a diferença de 1 ocorre porque o helper `tests/helpers/test-database-url.js` é descoberto como arquivo sem declarações de teste — ver §12.1).
+- **Validação (histórico do Dia 11.6)**: **188/188 testes** em 16 arquivos × 3 rodadas (175 → 188: +10 em `api.test.js` — origem, imutabilidade, corridas com provedor estacionado via promessas adiadas —, +2 no simulador, +1 de atomicidade do snapshot), rodada focada 45/45, `git diff --check` limpo, smoke real com trip com origem e pesquisa `CUR→LIS` (viagem de smoke removida do banco local). Esse total histórico antecede o Dia 11.9; o estado atual publicado em `a68bf73` tem **335 declarações `test(...)` em 25 arquivos** e **336 resultados reportados pelo runner** (o Dia 11.9 em `7286454` tem 306/307 e o D3 em `6abba27`, 322/323 — registros históricos; a diferença de 1 ocorre porque o helper `tests/helpers/test-database-url.js` é descoberto como arquivo sem declarações de teste — ver §12.1).
 
 ---
 
@@ -91,7 +91,7 @@ Ao longo de 11 dias incrementais, o TripPulse saiu de documento vazio para um **
 | Origem da viagem + imutabilidade de rota/período + serialização transacional | ✅ Implementado, testado e publicado (Dia 11.6, `fab9eac`) |
 | Histórico de preços determinístico + decomposição opcional | ✅ Implementado, testado e publicado (Dia 11.9, `7286454`) |
 | Integração **real** com provedores | ⚠️ **Adaptador experimental implementado; integração externa não validada e REAL bloqueado** (flag+chave apenas registram o adaptador; barreira fail-closed impede exposição/persistência REAL; D3 publicado em `6abba27`; validação manual e credenciais autorizadas ainda pendentes) |
-| Contrato OpenAPI 3.1 + Swagger UI | ✅ **Implementado e corrigido no working tree (Fase 4, 16/11/2026)**; response schemas fechados, Swagger UI + JSON condicionados por `API_DOCS_ENABLED`; 12 operações documentadas (§14.13 e §14.14) |
+| Contrato OpenAPI 3.1 + Swagger UI | ✅ **Implementado, corrigido e publicado em `a68bf73` (Fase 4)**; response schemas fechados, Swagger UI + JSON condicionados por `API_DOCS_ENABLED`; 12 operações documentadas (§14.13 e §14.14) |
 | Agente de IA / recomendações | ❌ Não iniciado |
 | Notificações, hotéis, veículos, atividades; publicação | ❌ Não iniciado |
 
@@ -123,19 +123,23 @@ trippulse/
 │   │   ├── opportunities/    # política pura + service/rota de oportunidades
 │   │   └── monitoring/       # núcleo puro + service (lock+persistência)/rotas + scheduler.js (quando disparar)
 │   ├── integrations/
+│   │   ├── airports/         # resolver local (snapshot OurAirports + csv/build)
 │   │   └── flight-providers/
 │   │       ├── index.js      # registro de provedores (único ponto de extensão)
 │   │       ├── normalize.js  # bruto → padrão canônico + garantia SIMULATED
+│   │       ├── serpapi/      # adaptador experimental SerpApi/Google Flights
 │   │       └── simulated/    # provedor externo simulado
+│   ├── openapi/
+│   │   └── schemas.js        # componentes/rotas do contrato OpenAPI 3.1
 │   ├── shared/
 │   │   ├── errors.js         # HttpError(statusCode, message)
 │   │   └── uuid.js           # isUuid()
 │   ├── app.js                # monta Fastify + /health + plugins no prefixo /trips
 │   └── server.js             # bootstrap: listen → scheduler → handlers → shutdown gracioso
-├── docs/ (contexto.md, relatorio-continuidade.md)
+├── docs/ (contexto.md, relatorio-continuidade.md, Regras.md, archive/)
 ├── prisma/ (schema.prisma + 6 migrations)
 ├── prisma.config.ts          # conexão do CLI (tolerante a .env ausente)
-├── tests/ (24 arquivos; estado publicado em `7286454`: 306 declarações / 307 resultados no runner; working tree local do D3: 322 declarações / 323 resultados — ver §12.1)
+├── tests/ (25 arquivos; estado publicado em `a68bf73`: 335 declarações / 336 resultados no runner; o D3 em `6abba27` tinha 322/323 e o Dia 11.9 em `7286454`, 306/307 — ver §12.1)
 ├── docker-compose.yml · .env.example · README.md · package.json
 ```
 
@@ -297,7 +301,7 @@ monitoring_runs (MonitoringRun)  — sem FK: registro operacional, independente 
 | `tests/env.test.js` | 18 | config do agendador: default OFF/900000; boolean estrito (`true`/`1`; `yes`/`sim` desativam com `warn`); intervalo inválido ignorado com OFF e fail-fast com ON; fronteiras 60000/86400000; **M2: rejeita `60000abc`, `60000.9`, `60000 0`**; **M3: isola e restaura `PORT`/`HOST`, sem vazamento do shell**; timeout de shutdown default 10000, fronteiras e fail-fast; **Dia 11.8: SerpApi default OFF com chave `null` e 1 expansão; boolean estrito com warn; chave trimmada e ausente→`null` com warn; expansões 1–10 com fail-fast D2 apenas com flag ativa** |
 | `tests/monitoring-scheduler.test.js` | 18 | agendador: timer único e idempotente; D1 (nada antes do intervalo); after-complete sem sobreposição; 409 como skip; erro genérico não para a cadeia; stop em voo; `idle()`; logs sem duplicação; **M1: stop→start em voo mantém uma cadeia e zero timers no stop final**; **borda: tick que falha antes do 1º `await` não deixa ciclo fantasma**; **L1: logger quebrado não mata a cadeia nem gera `unhandledRejection`**; integração real: `defaultScheduledRun` grava `trigger: SCHEDULED` |
 | `tests/server-bootstrap.test.js` | 17 | bootstrap: OFF nunca cria scheduler; ON inicia só após `listen` e usa o logger do Fastify; **providers configurados antes do listen; falha de configuração impede abrir a porta**; listen falhando → exit 1 sem factory/handlers; **L2: falha pós-listen (factory ou handlers) → stop + close + exit 1 com log da fase**; **L4: env incompleto falha antes de `createApplication`**; SIGTERM/SIGINT mesma sequência; shutdown idempotente; `close()` aguarda ciclo em voo; **L3: timeout do idle não retém o processo e registra warn**; `shutdownTimeoutMs` inválido falha antes do app; falha de `close`; `buildApp` real em porta 0; factory real com relógio falso |
-| `tests/monitoring-endpoint.test.js` | 10 | persistência: POST grava run COMPLETED refletindo relatório (linha verificada no banco); POST valida body/query ({} ok); GET histórico real com ordem decrescente e limit; GET valida limit; **árbitro: RUNNING de outro processo → 409 e nenhuma segunda linha RUNNING**; 200+409 simultâneos com lock liberado depois; falha isolada por viagem com run COMPLETED; **ciclo abortado → run FAILED, finishedAt gravado, nenhum RUNNING órfão**; concorrência in-process (1 ciclo, 1 rejeição, 1 pesquisa); trigger fora do vocabulário → TypeError sem criar linha. **Fixture ajustada no Dia 11.6: viagens criadas com origin (o ciclo pesquisa de verdade)** |
+| `tests/monitoring-endpoint.test.js` | 11 | persistência: POST grava run COMPLETED refletindo relatório (linha verificada no banco); POST valida body/query ({} ok); GET histórico real com ordem decrescente e limit; GET valida limit; GET rejeita item JSONB com propriedade desconhecida (500); **árbitro: RUNNING de outro processo → 409 e nenhuma segunda linha RUNNING**; 200+409 simultâneos com lock liberado depois; falha isolada por viagem com run COMPLETED; **ciclo abortado → run FAILED, finishedAt gravado, nenhum RUNNING órfão**; concorrência in-process (1 ciclo, 1 rejeição, 1 pesquisa); trigger fora do vocabulário → TypeError sem criar linha. **Fixture ajustada no Dia 11.6: viagens criadas com origin (o ciclo pesquisa de verdade)** |
 | `tests/monitoring-recovery.test.js` | 5 | recuperação de órfã: heartbeat expirado → FAILED com `failureReason`; heartbeat recente preservado; `startMonitoringRun` recupera antes de criar nova execução; ciclo atrasado perde a posse e não sobrescreve a recuperação com COMPLETED; ciclo real renova o heartbeat DURANTE a execução (promessa adiada + marcador futuro — prova do `withHeartbeat`) |
 | `tests/airport-resolver.test.js` | 14 | **Dia 11.8**: Curitiba→CWB (município, sem rede); Lisboa→LIS via alias curado (município é `Lisbon` na fonte); Madrid→MAD; São Paulo→GRU,CGH,VCP na ordem curada (VCP tem município Campinas — sem a tabela curada o natural jamais incluiria); normalização de acentos/caixa/espaços; IATA explícito; inexistente→`UNRESOLVED` sem inventar; ambígua→`UNRESOLVED` com candidatos (nunca o primeiro); aliases (Rio→GIG,SDU; Buenos Aires→AEP,EZE; lisbon); entrada curada inconsistente com snapshot lança erro alto (bug de manutenção, não filtragem silenciosa); **IATA duplicado → `AMBIGUOUS_IATA` com snapshot sintético injetado** (o conjunto real não tem duplicatas — fixture rotulada); `resolveIata` (válido/desconhecido/TypeError); `normalizeLocationText`; TypeError para vazio/não-texto |
 | `tests/serpapi-provider.test.js` | 42 | **Dia 11.8 (zero chamadas reais — fetch injetado + fixtures sintéticas rotuladas)**: parâmetros da busca (IATAs resolvidos multi-aeroporto por vírgula, `type` 1/2, `currency=BRL`, data ISO); **kgmid preferido sobre IATA quando o resolver fornecer**; autenticação na query **e chave nunca em mensagens de erro** (rede/HTTP/JSON); round-trip = 2 requisições (1+1 token) combinando ida+retorno com preço do retorno (pendência documentada); expansão N=1 (default)/3/5/10 com fórmula `1 + tokens` e tokens escolhidos na ordem determinística; rejeição de N>10/N<10; determinismo em empate de preço; ida simples sem expansão (1 requisição); mercado vazio → `[]` válido; round-trip sem `departure_token` → erro (anomalia); HTTP 4xx/5xx com status sem chave; timeout (AbortController); JSON inválido; itinerário malformado; expansão de retorno vazia; localidade não resolvida; consulta inválida; construção sem chave/fetch → TypeError; `price_insights` como metadado no raw; **pós-auditoria D4: resposta mista com/sem token (sem-token sai da seleção); tudo-sem-token segue anomalia; tokens duplicados dedupados (uma requisição por token único); falha HTTP na 2ª requisição aborta tudo (sem oferta parcial)**; **D3: contrato completo da 1ª requisição (`engine`/`hl`/`gl`/`travel_class`/`type`/aeroportos/datas/moeda, sem `departure_token`/`booking_token`, uma única `api_key`) e da 2ª (todos os parâmetros da 1ª preservados + `type=1` explícito + token, sem `booking_token`); HTTP 200 com `error` não vazio falha (inclusive na expansão, abortando tudo); status `Success` case-insensitive aceito, `Processing`/`Queued`/`Error`/desconhecido falham; `search_metadata` ausente tolerado; mercado vazio com `Success` e sem erro = `[]`; mensagens não expõem `api_key`/URL/`departure_token`; moeda BRL normalizada, USD falha, ausência usa fallback BRL, divergência na 2ª resposta falha**; **ajuste de confidencialidade: token usado na 2ª requisição e removido de `outbound`/`return`/`extra` do raw offer, campos restantes preservados, respostas originais não mutadas e normalização sem token**; **correção pós-auditoria: status `Error` na 2ª requisição aborta tudo (sem resultado parcial, sem segredo); `departure_token` com caracteres especiais (`+ / = & espaço %`) transmitido percent-encoded e recuperado íntegro, com `api_key` única e sem vazamento em erro**; **segunda auditoria de confidencialidade: texto externo de `error` e de rede não é propagado; token literal, percent-encoded, sem prefixo e sozinho, `token=`, URL e `api_key` não aparecem; status desconhecido e moeda divergente não são ecoados; 41/41 focados** |
@@ -369,7 +373,7 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 - `docker-compose` sem limites de recurso
 
 **Funcionalidades incompletas (planejadas, não implementadas):**
-- **Exposição de ofertas REAL aos usuários**: o adaptador SerpApi existe e é testável, mas a barreira 503 (duas camadas em `flights.service.js`) impede qualquer exposição/persistência REAL — liberação é decisão explícita futura. **D3 implementado localmente** (contrato da 2ª requisição + validação de resposta + moeda; §13); a **validação manual com conta autorizada** (estimativa de 2–3 requisições pagas, cenário GRU→LIS) permanece pré-requisito da liberação REAL
+- **Exposição de ofertas REAL aos usuários**: o adaptador SerpApi existe e é testável, mas a barreira 503 (duas camadas em `flights.service.js`) impede qualquer exposição/persistência REAL — liberação é decisão explícita futura. **D3 publicado em `6abba27`** (contrato da 2ª requisição + validação de resposta + moeda; §13); a **validação manual com conta autorizada** permanece pré-requisito da liberação REAL e foi detalhada no protocolo da Fase 5 (§15.4)
 - **Semântica exata do preço de round-trip do SerpApi** e decomposição base/impostos: pendências registradas (Decisão 40), a confirmar com fixtures reais
 - **kgmid/códigos de metrópole no resolver**: o adaptador aceita `kgmid` nos matches, mas o resolver ainda só devolve IATA (códigos de cidade são suporte futuro)
 - **Cobertura parcial da expansão de round-trip**: por desenho, expandir apenas N itinerários de ida (default 1) não cobre todas as combinações ida × volta (custo por requisição)
@@ -412,10 +416,10 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 | 1 | ✅ **Concluído — revisão, commit e push do Dia 11.4** (agendador + hardening + documentação), commit `83eb1ec` | Dias 11.1–11.3 |
 | 2 | ✅ **Concluída e publicada — Dia 11.5** (correção de cobertura com o 5º teste de recovery provando renovação de heartbeat em ciclo real, finalização documental, commit e push): commit `e4109eb`, CI success | 1 |
 | 3 | ✅ **Concluída e publicada — Dia 11.6** (origem no Trip + imutabilidade de rota/período + serialização transacional): commit `fab9eac`, `main == origin/main` | 2 |
-| 3.5 | ✅ **Publicado — Dia 11.8 em `c55238c` + segunda auditoria + correções + validação PostgreSQL** (resolver OurAirports + adaptador experimental SerpApi + feature flags + barreira fail-closed D5/D6; correções D1/D2/D4/D5/D6/D7 aplicadas; D3 registrada como validação pré-liberação REAL — seção 11). **289 declarações em 22 arquivos; 208 casos puros executados e passando no recorte canônico; validação PostgreSQL descartável com 289/289 em duas rodadas completas** (§11.6). A auditoria final pré-consolidação emitiu **APROVADO COM RESSALVAS**; a única pendência impeditiva — o registro da validação no relatório — foi fechada nesta atualização documental. **Próximo checkpoint: autorização de commit → autorização de push** (independentes) | 3 |
-| 3.6 | ✅ **Publicado - Dia 11.9 em `7286454`** (sequence determinística + base/taxes opcionais + migration atômica + **306 declarações em 24 arquivos / 307/307 em duas rodadas** após as correções pós-auditoria; o runner reporta 307 porque o helper `tests/helpers/test-database-url.js` é descoberto como arquivo sem declarações de teste - ver §12.1). **D3 implementado no working tree em 13/11/2026** (sem commit; §13). **Próximo checkpoint: auditoria independente do D3 → autorização de commit → push.** | 3.5 |
-| 4 | ✅ **Fase 4 implementada e corrigida no working tree — OpenAPI 3.1 + Swagger UI** (contrato formal, schemas de resposta/erro fechados, documentação interativa, gate `API_DOCS_ENABLED` e testes de validade; §14.13 e §14.14). Sem commit/push | D3 publicado (`6abba27`) |
-| 5 | Liberação de REAL (decisão explícita: remover barreira 503, confirmar semântica do preço de round-trip com fixtures reais, decidir decomposição base/impostos e política comercial/legal do SerpApi — Legal Shield só em planos Production+) | 3.5 maduro + credenciais de provedor |
+| 3.5 | ✅ **Publicado — Dia 11.8 em `c55238c` + segunda auditoria + correções + validação PostgreSQL** (resolver OurAirports + adaptador experimental SerpApi + feature flags + barreira fail-closed D5/D6; correções D1/D2/D4/D5/D6/D7 aplicadas; D3 registrada como validação pré-liberação REAL — seção 11). **289 declarações em 22 arquivos; 208 casos puros executados e passando no recorte canônico; validação PostgreSQL descartável com 289/289 em duas rodadas completas** (§11.6). A auditoria final pré-consolidação emitiu **APROVADO COM RESSALVAS**; a única pendência impeditiva — o registro da validação no relatório — foi fechada nesta atualização documental. **Checkpoint concluído:** commit e push realizados; o Dia 11.8 foi publicado em `c55238c`. D3 e Fase 4 avançaram em etapas posteriores. | 3 |
+| 3.6 | ✅ **Publicado - Dia 11.9 em `7286454`** (sequence determinística + base/taxes opcionais + migration atômica + **306 declarações em 24 arquivos / 307/307 em duas rodadas** após as correções pós-auditoria; o runner reporta 307 porque o helper `tests/helpers/test-database-url.js` é descoberto como arquivo sem declarações de teste - ver §12.1). **D3 implementado em 13/11/2026 (registro histórico do working tree em §13); checkpoint concluído:** publicado em `6abba27` (CI success, run `43788295629`). A validação manual com conta autorizada permanece pendente (§15.4). | 3.5 |
+| 4 | ✅ **Fase 4 implementada e corrigida em 16/11/2026 (registro histórico em §14.13/§14.14); checkpoint concluído:** publicada em `a68bf73` — OpenAPI 3.1 + Swagger UI (contrato formal, schemas de resposta/erro fechados, documentação interativa, gate `API_DOCS_ENABLED` e testes de validade). CI #14 success | D3 publicado (`6abba27`) |
+| 5 | **Fase 5 — preparação para integração real**: planejamento concluído em 16/11/2026 (§15), com protocolo D3, semântica de preço pendente, custos, jurídico e critérios de liberação. `REAL` continua bloqueado; não é uma liberação | Código publicado em `a68bf73`; decisão do usuário |
 | 6 | Publicação da API (Dockerfile, env de produção, migrations no deploy, TLS/CORS/rate limit) | 2–5 + decisão de plataforma |
 
 ---
@@ -439,7 +443,7 @@ npm run dev          # servidor com recarga
 curl http://localhost:3000/health → {"status":"ok","service":"trippulse-api"}
 ```
 
-> **Snapshot atual**: API com 12 endpoints, 4 tabelas/models (trips, flight_offers, price_history, monitoring_runs; `origin` é coluna de trips), **306 declarações de teste em 24 arquivos no commit publicado `7286454` — 307 resultados no runner; no working tree local do D3 são 322 declarações / 323 resultados** (a diferença de 1 entre declarações e resultados ocorre porque o helper `tests/helpers/test-database-url.js` é descoberto pelo padrão de arquivos de teste e contabilizado como arquivo sem declarações de teste — §12.1; 0 abertos; Dias 1–10 e 11.1–11.5 validados pelo CI; **11.3 em `46acf4a`, 11.4 em `83eb1ec`, 11.5 em `e4109eb`, 11.6 em `fab9eac`, todos publicados**). **Dia 11.8 publicado em `c55238c`** (CI success, run `43106273261`): **resolver de aeroportos agnóstico** (`integrations/airports/` — snapshot local OurAirports em domínio público com 4.008 aeroportos comerciais, `ident` canônico, tabela curada para multi-aeroporto/grafias divergentes, `UNRESOLVED` explícito para ambiguidade/inexistência, sem rede em runtime, regeneração por script de manutenção com proveniência SHA-256); **adaptador experimental SerpApi/Google Flights** (`flight-providers/serpapi/` — `fetch` nativo injetável, round-trip via `departure_token`, expansão limitada `SERPAPI_MAX_OUTBOUND_EXPANSIONS` 1–10 com fórmula `1 + tokens`, seleção determinística, erros externos não propagados e mensagens controladas (sem `api_key`, `departure_token` ou URL), erros HTTP/timeout/JSON/vazio tratados, fixtures 100% sintéticas — zero chamadas pagas); **feature flags** (`SERPAPI_ENABLED` default `false` estrito D4, `SERPAPI_API_KEY` opcional, `SERPAPI_MAX_OUTBOUND_EXPANSIONS` default 1 com fail-fast D2) e **registro condicional** (`buildFlightProviders`: sem flag+chave o provedor não existe; simulado continua o padrão); **barreira REAL realocada** — o normalizador agora classifica REAL (mapeadores por provedor + fallback simulado para stubs); o bloqueio pré-provider é `HttpError(503)` antes de qualquer operação Prisma (inclusive `trip.findUnique`), com barreira pós-normalização e D5 na persistência. O teste com banco que cobre zero linhas em `flight_offers`/`price_history` **foi reexecutado na validação PostgreSQL descartável (289/289 em duas rodadas completas — §11.6)**; o recorte puro também cobre o gate e os contadores. Pendências registradas: semântica do preço de round-trip, base/impostos `NULL` persistidos, kgmid/códigos de metrópole no resolver, cobertura parcial da expansão, `price_insights` isolado do `PriceHistory`. 208 casos puros executados (228 execuções no recorte canônico); suíte completa com **289/289 em duas rodadas** na validação PostgreSQL descartável (§11.6), encerrando as 81 declarações antes pendentes, módulos novos validados isoladamente, `git diff --check` limpo, **sexta migration** (Dia 11.9) e sem dependência nova. **Dia 11.9**: migration em banco vazio e populado, **307/307 em duas rodadas** após as correções pós-auditoria e `prisma migrate diff` sem diferença; **publicado em `7286454`**. Débitos anteriores do 11.5/11.6 permanecem válidos (Decisões 29/30/36). Git: `main == origin/main == 7286454`, working tree = D3 + documentação (nada staged). **D3 local (13/11/2026)**: contrato das duas requisições, validação de resposta, moeda e confidencialidade de erros; **41 testes no provider (39 antes dos 2 testes de confidencialidade) e 318/318 na suíte completa antes dos 4 testes pós-auditoria** em PostgreSQL 17 local; validação manual com conta autorizada permanece pendente. **Primeira auditoria independente do D3: APROVADO COM RESSALVAS; segunda auditoria: NÃO APROVADO por vazamento de `departure_token`; correção de confidencialidade e testes aplicados — próximo checkpoint: nova auditoria independente → autorização de commit → push.** Depois: liberação de REAL com decisão explícita (semântica de preço, base/impostos, Legal Shield/ToS — só Production+; litígio Google v. SerpApi com leave to amend ~01/12/2026).
+> **Snapshot atual**: API com 12 endpoints, 4 tabelas/models (trips, flight_offers, price_history, monitoring_runs; `origin` é coluna de trips), **335 declarações de teste em 25 arquivos no commit publicado `a68bf73` — 336 resultados no runner; o D3 em `6abba27` tinha 322/323 em 24 arquivos e o Dia 11.9 em `7286454`, 306/307** (a diferença de 1 entre declarações e resultados ocorre porque o helper `tests/helpers/test-database-url.js` é descoberto pelo padrão de arquivos de teste e contabilizado como arquivo sem declarações de teste — §12.1; 0 abertos; Dias 1–10 e 11.1–11.5 validados pelo CI; **11.3 em `46acf4a`, 11.4 em `83eb1ec`, 11.5 em `e4109eb`, 11.6 em `fab9eac`, todos publicados**). **Dia 11.8 publicado em `c55238c`** (CI success, run `43106273261`): **resolver de aeroportos agnóstico** (`integrations/airports/` — snapshot local OurAirports em domínio público com 4.008 aeroportos comerciais, `ident` canônico, tabela curada para multi-aeroporto/grafias divergentes, `UNRESOLVED` explícito para ambiguidade/inexistência, sem rede em runtime, regeneração por script de manutenção com proveniência SHA-256); **adaptador experimental SerpApi/Google Flights** (`flight-providers/serpapi/` — `fetch` nativo injetável, round-trip via `departure_token`, expansão limitada `SERPAPI_MAX_OUTBOUND_EXPANSIONS` 1–10 com fórmula `1 + tokens`, seleção determinística, erros externos não propagados e mensagens controladas (sem `api_key`, `departure_token` ou URL), erros HTTP/timeout/JSON/vazio tratados, fixtures 100% sintéticas — zero chamadas pagas); **feature flags** (`SERPAPI_ENABLED` default `false` estrito D4, `SERPAPI_API_KEY` opcional, `SERPAPI_MAX_OUTBOUND_EXPANSIONS` default 1 com fail-fast D2) e **registro condicional** (`buildFlightProviders`: sem flag+chave o provedor não existe; simulado continua o padrão); **barreira REAL realocada** — o normalizador agora classifica REAL (mapeadores por provedor + fallback simulado para stubs); o bloqueio pré-provider é `HttpError(503)` antes de qualquer operação Prisma (inclusive `trip.findUnique`), com barreira pós-normalização e D5 na persistência. O teste com banco que cobre zero linhas em `flight_offers`/`price_history` **foi reexecutado na validação PostgreSQL descartável (289/289 em duas rodadas completas — §11.6)**; o recorte puro também cobre o gate e os contadores. Pendências registradas: semântica do preço de round-trip, base/impostos `NULL` persistidos, kgmid/códigos de metrópole no resolver, cobertura parcial da expansão, `price_insights` isolado do `PriceHistory`. 208 casos puros executados (228 execuções no recorte canônico); suíte completa com **289/289 em duas rodadas** na validação PostgreSQL descartável (§11.6), encerrando as 81 declarações antes pendentes, módulos novos validados isoladamente, `git diff --check` limpo, **sexta migration** (Dia 11.9) e sem dependência nova. **Dia 11.9**: migration em banco vazio e populado, **307/307 em duas rodadas** após as correções pós-auditoria e `prisma migrate diff` sem diferença; **publicado em `7286454`**. Débitos anteriores do 11.5/11.6 permanecem válidos (Decisões 29/30/36). Naquele ponto (registro histórico), o Git estava em `main == origin/main == 7286454`, com working tree = D3 + documentação (nada staged). **D3 local (13/11/2026 — registro histórico, já superado):** contrato das duas requisições, validação de resposta, moeda e confidencialidade de erros; **41 testes no provider (39 antes dos 2 testes de confidencialidade) e 318/318 na suíte completa antes dos 4 testes pós-auditoria** em PostgreSQL 17 local; a validação manual com conta autorizada já era pendência naquele momento e continua pendente. A primeira auditoria independente do D3 foi **APROVADA COM RESSALVAS** e a segunda **NÃO APROVADA** por vazamento de `departure_token`; as correções de confidencialidade e os testes correspondentes foram aplicados e o D3 foi depois publicado em `6abba27` (322/323 em 24 arquivos), concluindo o ciclo auditoria → commit → push. **Os números de 41 e 318/318 são históricos e não descrevem o estado atual**, que é 335 declarações/336 resultados em `a68bf73` (início deste Snapshot). Depois: liberação de REAL com decisão explícita (semântica de preço, base/impostos, Legal Shield/ToS — só Production+; litígio Google v. SerpApi com leave to amend ~01/12/2026).
 
 ---
 
@@ -460,7 +464,7 @@ Auditoria READ-ONLY independente concluída com parecer **APROVADO COM RESSALVAS
 
 ### 11.3 D3 - contrato da 2ª requisição (implementado localmente em 13/11/2026)
 
-Na auditoria do Dia 11.8, os parâmetros exigidos pelo SerpApi na 2ª requisição do round-trip (a que envia `departure_token`) **não podiam ser confirmados sem conta autorizada** e os testes usavam fixtures sintéticas que aceitavam qualquer parâmetro. O D3 foi implementado localmente (§13): a 2ª requisição passou a preservar todos os parâmetros da 1ª pesquisa e a acrescentar `type=1` explícito + `departure_token` (Alternativa B, coerente com o exemplo oficial), com testes de contrato, validação de `error`/status e moeda efetiva. **A validação manual com conta autorizada permanece pendente** (estimativa de 2–3 requisições pagas; cenário GRU→LIS) e é pré-requisito da liberação REAL; nenhuma chamada real foi feita nesta etapa.
+Na auditoria do Dia 11.8, os parâmetros exigidos pelo SerpApi na 2ª requisição do round-trip (a que envia `departure_token`) **não podiam ser confirmados sem conta autorizada** e os testes usavam fixtures sintéticas que aceitavam qualquer parâmetro. O D3 foi implementado localmente (§13): a 2ª requisição passou a preservar todos os parâmetros da 1ª pesquisa e a acrescentar `type=1` explícito + `departure_token` (Alternativa B, coerente com o exemplo oficial), com testes de contrato, validação de `error`/status e moeda efetiva. **A validação manual com conta autorizada permanece pendente** (protocolo R1–R7; cenário GRU→LIS) e é pré-requisito da liberação REAL; nenhuma chamada real foi feita nesta etapa.
 
 ### 11.4 Validação pura — estado ANTERIOR à validação PostgreSQL (histórico)
 
@@ -652,7 +656,7 @@ Registro das correções pedidas pela verificação de fechamento e das validaç
 
 **Token no raw offer**: o `departure_token` é usado somente durante a expansão (2ª requisição). Depois dela, os raw offers são montados a partir de cópias de `outbound` e `return` sem essa propriedade e sem `departure_token` em `extra`; os objetos originais recebidos da SerpApi não são mutados. A normalização e a persistência continuam sem transportar o campo. A validação integrada de logs e resposta HTTP permanece pendência para a etapa anterior à liberação de REAL.
 
-**Testes**: `tests/serpapi-provider.test.js` passou de 26 para **41 testes** no D3 (15 novos: 11 do D3 + 2 de correção pós-auditoria + 2 de confidencialidade da segunda auditoria) e recebeu **+1 teste** no ajuste de remoção do token, totalizando **42**. A cobertura inclui contrato completo das duas requisições, presença/ausência de parâmetros, `departure_token` (literal e percent-encoded, com e sem prefixo, `token=` e valor isolado), `booking_token`, `api_key` sem duplicação/vazamento, exceção de rede com URL/dados sensíveis, `error` em HTTP 200 (inclusive na expansão), status `Success`/`Processing`/`Queued`/`Error`/desconhecido (inclusive `Error` na 2ª requisição; desconhecido sem eco), `search_metadata` ausente, mercado vazio sem erro, sanitização, moeda (BRL/minúsculas, USD sem eco do valor externo, ausente, divergência na 2ª resposta) e remoção do token do raw sem mutação/preservação dos demais campos. Resultados: **42/42 focados após o ajuste** (41/41 na auditoria anterior; 39 antes dos 2 testes de confidencialidade) e **318/318 na suíte completa antes dos 4 testes pós-auditoria** (0 falhas, 0 skipped, 0 cancelados); a suíte completa **não foi reexecutada** após as correções — os 318/318 permanecem como medição anterior, não reproduzida nesta etapa. `git diff --check` limpo. A suíte usou o PostgreSQL local de desenvolvimento (`trippulse-db`, 5433) e o banco descartável de teste da migration em `trippulse-audit3-pg17` (`TEST_DATABASE_URL`, 5548); a **sexta migration, já publicada no commit `7286454`**, foi aplicada ao banco local `trippulse-db` via `npm run db:deploy` (`prisma migrate deploy`). **Nenhum arquivo de schema ou migration foi criado ou alterado durante o D3** — nenhuma migration nova e nenhuma alteração em `schema.prisma` ou em migrations existentes. **Zero chamadas reais à SerpApi; nenhuma credencial real.**
+**Testes**: `tests/serpapi-provider.test.js` passou de 26 para **41 testes** no D3 (15 novos: 11 do D3 + 2 de correção pós-auditoria + 2 de confidencialidade da segunda auditoria) e recebeu **+1 teste** no ajuste de remoção do token, totalizando **42**. A cobertura inclui contrato completo das duas requisições, presença/ausência de parâmetros, `departure_token` (literal e percent-encoded, com e sem prefixo, `token=` e valor isolado), `booking_token` (apenas ausência nas requisições; não há teste de remoção do raw), `api_key` sem duplicação/vazamento, exceção de rede com URL/dados sensíveis, `error` em HTTP 200 (inclusive na expansão), status `Success`/`Processing`/`Queued`/`Error`/desconhecido (inclusive `Error` na 2ª requisição; desconhecido sem eco), `search_metadata` ausente, mercado vazio sem erro, sanitização, moeda (BRL/minúsculas, USD sem eco do valor externo, ausente, divergência na 2ª resposta) e remoção do `departure_token` do raw sem mutação/preservação dos demais campos. Resultados: **42/42 focados após o ajuste** (41/41 na auditoria anterior; 39 antes dos 2 testes de confidencialidade) e **318/318 na suíte completa antes dos 4 testes pós-auditoria** (0 falhas, 0 skipped, 0 cancelados); a suíte completa **não foi reexecutada** após as correções — os 318/318 permanecem como medição anterior, não reproduzida nesta etapa. `git diff --check` limpo. A suíte usou o PostgreSQL local de desenvolvimento (`trippulse-db`, 5433) e o banco descartável de teste da migration em `trippulse-audit3-pg17` (`TEST_DATABASE_URL`, 5548); a **sexta migration, já publicada no commit `7286454`**, foi aplicada ao banco local `trippulse-db` via `npm run db:deploy` (`prisma migrate deploy`). **Nenhum arquivo de schema ou migration foi criado ou alterado durante o D3** — nenhuma migration nova e nenhuma alteração em `schema.prisma` ou em migrations existentes. **Zero chamadas reais à SerpApi; nenhuma credencial real.**
 
 **Arquivos alterados (somente)**: `apps/api/src/integrations/flight-providers/serpapi/serpapi-flight-provider.js`, `tests/fixtures/serpapi-fixtures.js`, `tests/serpapi-provider.test.js`, `README.md` e este relatório. Sem alteração em D5/D6/D7, persistência, `normalize.js`, `flights.service.js`, schema, migrations, `.env` ou dependências; REAL continua bloqueado.
 
@@ -917,3 +921,384 @@ style-src 'self'; upgrade-insecure-requests;
 - Validação OpenAPI 3.1 do documento gerado: `valid: true`, sem warnings; 8 paths, 12 operações e 45 componentes; exemplos de resposta validados com Ajv sem falhas.
 
 **Estado e limites:** HEAD permanece `6abba27d15f6500f8d3aa12b0f7479b6d3161137`; nada staged/commitado/pushado. Nenhuma alteração em Prisma, migrations, regras de negócio, contratos de provedores, D5/D6/D7, barreira `REAL` ou semântica de preços. Nenhuma chamada real à SerpApi e `REAL` continua bloqueado. Não houve inspeção visual em navegador; a UI foi validada por `app.inject()` (HTML, CSP, assets locais, inicializador e JSON). **Este registro não declara aprovação independente; o D4 aguarda nova auditoria.**
+
+> **Atualização posterior (16/11/2026):** o D4 foi aprovado na segunda auditoria independente, commitado em `a68bf73eb001bc9d70484186a4b98a4a53b82334` e publicado; o CI #14 (`43884861309`) concluiu com `success`. O parágrafo acima permanece como registro do estado no momento do §14.14.
+
+---
+
+## 15. Fase 5 — preparação para integração real (planejamento, 16/11/2026)
+
+> **Natureza desta etapa:** planejamento e análise. Nenhuma chamada real à SerpApi foi executada, nenhuma credencial foi usada, nenhum arquivo de código/Prisma/migration foi alterado e a barreira `REAL` (503) permanece intacta. `REAL` continua **bloqueado**. Este §15 registra o que foi auditado, o que é hipótese, o que exige evidência e o que impede a liberação.
+
+### 15.1 Estado Git e limite de escopo
+
+| Item | Estado em 16/11/2026 |
+|---|---|
+| Branch | `main` |
+| HEAD inicial | `a68bf73eb001bc9d70484186a4b98a4a53b82334` |
+| `origin/main` inicial | `a68bf73eb001bc9d70484186a4b98a4a53b82334` |
+| Working tree inicial | limpa |
+| Staging inicial | vazio |
+| CI do commit | run `#14` / `43884861309`, conclusão `success` |
+| Código de referência | commit publicado, não o working tree de relatórios anteriores |
+
+Foram consultados o código efetivamente publicado, `docs/contexto.md`, este relatório, `README.md` e `docs/Regras.md`. A documentação anterior foi tratada como histórica; onde divergiu do código, prevaleceu o código. **Nenhum teste de código foi executado nesta etapa**, pois não houve alteração de código; a verificação final é documental (`git diff --check`, conferência de links e estado Git).
+
+### 15.2 Arquitetura atual e o que está comprovado
+
+O fluxo publicado é:
+
+```text
+GET /trips/:tripId/flights
+  → valida UUID
+  → resolve o registro de providers
+  → assertOnlySimulatedProviders (barreira D6, antes de banco e de rede)
+  → busca Trip, exige origin
+  → calcula variationSeed
+  → provider.search() FORA de transação
+  → normalizeFlightOffer() (classificação vem do registro)
+  → assertOnlySimulatedOffers (defesa pós-normalização)
+  → transação: lock da Trip → relê config → snapshot atômico
+  → persistOfferSnapshot (defesa D5)
+```
+
+O adaptador SerpApi implementa `type=1` com `outbound_date` e `return_date` na primeira requisição. Para cada `departure_token` selecionado, repete os parâmetros da primeira pesquisa, acrescenta `type=1` e o token, e faz a segunda requisição. A fórmula é `1 + N`, com `N` entre 1 e 10. O retorno escolhido é o primeiro da ordenação determinística por preço, duração, partida e companhia/voo. O preço usado hoje é `chosenReturn.price`.
+
+**Comprovado por código e testes sintéticos:** contrato das duas requisições, preservação de parâmetros, validação de `error`/`search_metadata.status`, moeda BRL, timeout por `AbortController`, mensagens sanitizadas, remoção de `departure_token` dos raw offers, fail-closed em falha de expansão, deduplicação de tokens, barreira em três pontos e preservação de D5/D6/D7.
+
+**Não comprovado:** comportamento de resposta real, semântica do preço, disponibilidade real, latência real, limites de throughput na prática, qualidade dos dados, direitos contratuais de uso e custo total de operação.
+
+### 15.3 Achados técnicos da auditoria
+
+1. **Preço do round-trip não confirmado.** O código usa o preço do retorno da segunda resposta como total do trip. A documentação oficial consultada descreve o fluxo de `departure_token`, mas não afirma de forma inequívoca que esse campo é o total combinado. Não é seguro tratar a hipótese como fato.
+2. **Identidade da oferta ignora a volta.** `buildOfferExternalKey()` usa provider, rota, companhia, número do voo e data de partida **da ida**. `normalizeSerpApiOffer()` também projeta rota, datas e voo apenas da ida. Dois retornos diferentes para a mesma ida produzem o mesmo `externalKey`; o histórico pode misturar produtos distintos e o `best`/`trend` perde significado. Este é um bloqueio técnico independente da semântica do preço.
+3. **Custo sem controle.** O endpoint `/flights` é aberto, sem autenticação, rate limit, orçamento por período ou contador de créditos. O scheduler é sequencial, mas chamadas manuais podem ser concorrentes e consumir créditos sem relação com o ciclo agendado.
+4. **Sem idempotência.** Cada pesquisa grava uma nova observação por oferta. Um retry manual ou uma repetição do ciclo cria outra linha de `PriceHistory`, mesmo com o mesmo preço; não há chave de idempotência nem janela de deduplicação de observações.
+5. **Sem retry/backoff/circuit breaker.** Uma falha de rede, HTTP, JSON ou retorno vazio aborta a viagem inteira. O scheduler tenta de novo no próximo ciclo, mas não há backoff, jitter, orçamento total ou disjuntor. Indisponibilidade externa tende a virar erro genérico 500, não 502/503.
+6. **Timeout apenas por requisição.** O adaptador usa 30 s por chamada. Um round-trip com N expansões pode consumir até `(1+N) × 30 s` em caso de lentidão, sem prazo total do ciclo. O scheduler não sobrepõe ciclos, mas o ciclo pode ficar muito longo.
+7. **Cache implícito.** O adaptador não envia `no_cache`; portanto aceita o cache padrão do SerpApi (consulta exata, 1 h, gratuito). Isso pode reduzir custo, mas também devolver preço com até 1 h de idade. A política de frescor/cache não está definida.
+8. **Sem observabilidade de custo.** Não há métricas de requisições, créditos, latência, taxa de erro por provider, cache hit ou custo estimado. Também não há alerta de consumo.
+9. **Logs sem redaction explícita.** O Fastify está com `logger: true`. O adaptador não registra a URL nem o corpo bruto e sanitiza mensagens, mas não há configuração de redaction no logger nem teste integrado de logs. Mensagens de falha por viagem são persistidas em `monitoring_runs.items` e expostas no GET de monitoramento.
+10. **Desativação exige restart.** `SERPAPI_ENABLED` é lida no boot, o registro é memoizado e não existe kill switch em runtime. Desligar o provider ou o scheduler em produção exige reiniciar o processo.
+11. **Isolamento é all-or-nothing.** O registro sempre inclui o simulado; ao adicionar o SerpApi real, `assertOnlySimulatedProviders` bloqueia a lista inteira. Isso é correto para a barreira atual, mas a liberação futura precisará definir mistura, prioridade e fallback entre SIMULATED e REAL.
+12. **Contrato de resposta assumiria `simulated: true`.** `searchFlightsForTrip` devolve `simulated: true` fixo. Uma liberação REAL exigirá revisão do contrato e do OpenAPI, não apenas a remoção da barreira.
+13. **`observedAt` é hora local da captura.** Não é o timestamp da cotação do provedor. Com cache, o dado pode ser mais antigo. Não há campo separado de `quoteAt`/`retrievedAt`.
+14. **D5/D6/D7 preservados.** Nenhuma alteração foi feita em `real-barrier.js`, `normalize.js`, `offers.service.js`, `flights.service.js`, schema, migrations ou contratos de providers nesta fase.
+15. **`booking_token` não é removido do raw.** O adaptador nunca envia `booking_token`, mas `withoutDepartureToken()` remove apenas `departure_token`; o raw `return` pode conservar `booking_token`. A normalização não lê `raw.return`, então o token não é transportado para a oferta normalizada pelo fluxo atual, e a persistência usa apenas essa oferta. Ainda assim, a ausência de `booking_token` no raw e na persistência não possui teste específico de regressão. A documentação foi corrigida para não afirmar remoção de ambos.
+
+### 15.4 Protocolo mínimo de validação manual do D3
+
+**Objetivo:** validar o adaptador e a semântica do preço sem remover a barreira, sem usar credenciais de produção e sem executar nada nesta fase.
+
+**Pré-condições obrigatórias:**
+
+- autorização escrita e específica do usuário, com orçamento máximo;
+- conta SerpApi dedicada ao teste, sem dados de produção;
+- chave fornecida apenas por variável de ambiente em sessão isolada;
+- `SERPAPI_ENABLED` não precisa ser ligado no servidor: a validação pode chamar `createSerpApiFlightProvider()` diretamente, com `fetch` nativo e sem passar por `/flights`;
+- barreira `REAL` e D5/D6/D7 intocadas;
+- nenhum screenshot, log ou fixture pode conter chave ou tokens.
+
+**Cenário principal:** GRU → LIS, 2027-03-10 (ida) e 2027-03-20 (volta), economia, 1 adulto, BRL, `hl=pt-BR`, `gl=br`, `maxOutboundExpansions=1`.
+
+| Ordem | Chamada | Requisições HTTP | Créditos potenciais | Dependência de cache | O que registrar |
+|---|---|---|---|---|---|
+| R1 | Execução A: `type=1`, rota, `outbound_date`, `return_date` | 1 | até 1; cobrança não presumida | primeira consulta; sem cache | status HTTP, `search_metadata.status`, `search_parameters.currency`, `P1` da ida escolhida, presença de `departure_token`, quantidade de `best_flights`/`other_flights` |
+| R2 | Execução A: todos os parâmetros da R1 + `type=1` + `departure_token` | 1 | até 1; cobrança não presumida | token novo; sem cache | prova de preservação dos parâmetros, `P2` do retorno escolhido, presença de `booking_token`, quantidade de retornos |
+| R3 | Execução A: `booking_token` do retorno escolhido, mesmos parâmetros de contexto | 1 | até 1; cobrança não presumida | token novo; sem cache | `booking_options`; `selected_flights`; `separate_tickets`; `together`; `departing`; `returning`; `baggage_prices`; seller e preço `B` correspondente |
+| R4 | Execução B: repetir R1 com os mesmos parâmetros | 1 | 0 ou 1; **não garantido** | repetição exata de R1; pode usar cache de 1 h, mas só evita cobrança com parâmetros idênticos e cache válido | determinismo do mercado e eventuais divergências |
+| R5 | Execução B: repetir R2 com o token da R4 | 1 | 0 ou 1; **não garantido** | se o token da R4 for idêntico ao da R1, repete R2 e pode usar cache; caso contrário, consulta nova | contrato preservado e novo `P2` |
+| R6 | Execução B: repetir R3 com o token da R5 | 1 | 0 ou 1; **não garantido** | se o token da R5 for idêntico ao da R2, repete R3 e pode usar cache; caso contrário, consulta nova | mesmos campos de R3 e novo `B` |
+| R7-C | Repetir booking options de R3 com cache padrão | 1 | 0 ou 1; **não garantido** | mesma consulta de R3; depende de parâmetros idênticos e cache válido | cache hit/miss, `B`, campos de R3 e delta do contador |
+| R7-N | Repetir booking options de R3 com `no_cache=true` | 1 | até 1; cobrança não presumida | `no_cache=true` força consulta nova; sem cache | `B`, campos de R3 e delta do contador |
+
+**Quantidade e custo:** duas execuções positivas completas = **6 requisições HTTP** (R1–R3 e R4–R6). O R7 é adicional e deve ser executado como **duas requisições separadas** (R7-C e R7-N), totalizando **8 requisições positivas** se ambas forem feitas; se o orçamento permitir apenas uma, priorizar R7-N e registrar que o cache não foi testado. **Requisições não equivalem a créditos:** cada requisição pode consumir até 1 crédito, mas R4, R5, R6 e R7-C podem ser atendidas pelo cache padrão. Isso só evita cobrança quando os parâmetros são exatamente os mesmos e o cache está válido; **não presumir gratuidade** por repetição. Sem consultar o contador da conta, não é possível prometer custo exato: registrar o valor antes/depois e, se o contador não estiver disponível, declarar a limitação em vez de apresentar estimativa como cobrança confirmada. O teste negativo com token inválido/expirado é opcional e fica **fora** das 8 requisições positivas: **não presumir que seja gratuito**; medir o contador antes/depois. Se for testar mercado vazio, acrescentar 1 requisição; resultado vazio, se cobrado, conta como busca.
+
+**Contador de créditos:** registrar o valor do painel/consumo antes de R1 e depois de **cada** chamada, sem capturar credenciais, IDs de conta ou dados pessoais. Registrar o delta mesmo quando a chamada falhar; a cobrança de falhas e de tokens inválidos não é presumida. Se o contador não estiver disponível, declarar a limitação e **não afirmar custo exato**.
+
+**Cache:** as chamadas positivas que podem depender de cache são **R4** (repetição exata de R1), **R5/R6** (somente se o token retornado for idêntico ao da execução A) e **R7-C** (mesma consulta de R3 com cache padrão). A eventual gratuidade exige correspondência exata dos parâmetros e cache válido; se qualquer parâmetro mudar, o token expirar ou o cache estiver vencido, a consulta **deixa de ter expectativa de cache hit** e **pode consumir crédito** caso resulte em busca bem-sucedida — conferindo o contador da conta antes/depois de cada chamada. **R7-N** usa `no_cache=true` e força consulta nova — não depende de cache. Comparar `B`, seller e contador entre R3, R7-C e R7-N. Executar R7 imediatamente após R3 para reduzir o risco de expiração do token; se ele expirar, repetir R1–R3 e registrar o desvio. Se o endpoint de booking options não aceitar `no_cache`, registrar como “não testável” e não inferir cache hit. O cache de 1 h é por consulta exata e não garante frescor.
+
+**Resultados esperados:**
+
+- R1/R4: HTTP 200, `status = Success`, moeda BRL, ao menos uma ida com `departure_token`.
+- R2/R5: HTTP 200, `status = Success`, mesmos parâmetros da respectiva busca inicial, `type=1` explícito, ao menos um retorno; nenhuma oferta parcial se falhar.
+- R3/R6: HTTP 200, `booking_options` preenchido; `selected_flights`, `separate_tickets`, `together`, `departing`, `returning`, `baggage_prices`, seller e `B` comparáveis ao itinerário selecionado.
+- R7-C/R7-N: mesma consulta de booking options, com e sem cache; comparar `B`, seller e contador.
+- Mercado vazio: HTTP 200, `Success`, ausência de `best_flights`/`other_flights` e retorno `[]` pelo adaptador, sem exceção.
+
+**Evidências que devem ser capturadas:**
+
+- data/hora UTC, SHA do código, versão do adaptador, rota, datas, moeda, `N`;
+- parâmetros sanitizados de R1/R2/R4/R5 (sem `api_key`/tokens), inclusive prova de preservação;
+- status HTTP, `search_metadata.status`, `search_parameters.currency`;
+- `P1`, `P2`, `B`, `price_insights.lowest_price` (quando presente);
+- presença booleana de `departure_token`/`booking_token` (nunca o valor);
+- quantidade de itinerários e o primeiro itinerário de retorno escolhido;
+- todos os campos de R3/R6: `selected_flights`, `separate_tickets`, `together`, `departing`, `returning`, `baggage_prices`, seller e preço correspondente;
+- contador de créditos antes/depois de cada chamada e cache hit/miss;
+- comparação manual com a mesma consulta na UI do Google Flights (mesma rota, datas, locale/currency), com data/hora e screenshot sem dados sensíveis.
+
+**Como gerar fixtures sem armazenar credenciais ou tokens:**
+
+1. Executar uma sessão única, com a chave apenas em `SERPAPI_API_KEY` do processo; nunca criar `.env` de teste versionado.
+2. Usar um `fetchImpl` instrumentado em memória para receber a resposta; não gravar URL, corpo bruto ou headers.
+3. Aplicar uma allowlist de campos e substituir `departure_token`/`booking_token` por placeholders determinísticos (`<OUTBOUND_TOKEN_1>`, `<RETURN_BOOKING_TOKEN_1>`); remover `api_key`, `search_metadata.id`, endpoints, URLs e qualquer campo desconhecido.
+4. Gravar somente o JSON sanitizado em `tests/fixtures/real/serpapi/` (futuro), com um sidecar de proveniência: data, SHA do código, rota, datas, moeda, quantidade de requisições e SHA-256 do fixture.
+5. Rodar uma verificação automática que compare a chave real com o conteúdo do fixture sem imprimi-la e que rejeite padrões de token/URL; revisar o diff antes de qualquer commit.
+6. Nunca versionar resposta bruta, `.env`, logs de rede ou screenshots com URL/QR/token.
+
+**Verificação separada dos tokens (código e testes):**
+
+- `departure_token`: é enviado somente em R2/R5; `withoutDepartureToken()` remove a propriedade por cópia dos itinerários de ida e volta; os testes verificam ausência em `raw`, `raw.outbound`, `raw.return`, no JSON serializado e no objeto normalizado; as respostas originais não são mutadas.
+- `booking_token`: **nunca é enviado** nas requisições (testes verificam `searchParams.get('booking_token') === null`); porém **não é removido do raw `return`** pelo código. A normalização de `normalizeSerpApiOffer()` não lê `raw.return`, então o token **não é transportado para a oferta normalizada pelo fluxo atual**; a persistência recebe apenas a oferta normalizada. **Não há teste específico de regressão** que prove ausência de `booking_token` no raw ou na persistência — a redação anterior que afirmava remoção de ambos foi corrigida.
+
+**Critério de aceite do protocolo:** as duas execuções positivas completas (R1–R6) e o R7 produzem evidência suficiente para decidir a semântica do preço e comparar cache; a negativa opcional prova confidencialidade; as fixtures permitem reproduzir o comportamento sem rede e sem segredo. Sem isso, o D3 permanece “implementado e testado apenas com fixtures sintéticas”, não “validado com provedor real”.
+
+### 15.5 Semântica do preço round-trip: decisão proposta
+
+**Fatos:**
+
+- A documentação oficial do Google Flights API descreve `type=1`, `return_date` e a necessidade de uma segunda requisição com `departure_token`, mas não afirma, de forma inequívoca, que o `price` da segunda resposta é o total combinado.
+- O exemplo oficial é de ida simples; não há um exemplo oficial completo de round-trip com `P1`, `P2` e total de booking que feche a semântica.
+- O adaptador atual usa `chosenReturn.price` (`P2`) como `price.total` do trip; `P1` é descartado.
+- A oferta canônica e o `externalKey` não distinguem o retorno.
+
+**Hipóteses e teste:**
+
+| Observação | Interpretação |
+|---|---|
+| `B ≈ P2` | `P2` é o total do itinerário selecionado; a implementação atual estaria correta. |
+| `B ≈ P1 + P2` | `P1` é a ida e `P2` é a volta; o total precisa ser somado. |
+| `B ≈ P1` e `P2` é o retorno | `P1` já é o total; não usar `P2` como total. |
+| `B` diverge de todos | Há taxa/vendedor diferente; repetir com o mesmo vendedor e mesma tarifa antes de concluir. |
+
+**Decisão proposta:** manter `REAL` bloqueado e não alterar `PriceHistory` agora. Depois da evidência, adotar a hipótese confirmada, com estas regras:
+
+- o preço persistido deve representar o **itinerário selecionado ida+volta**, não “a ida” nem “a volta” isoladamente;
+- se `P2` for total, manter `P2`; se `P2` for incremental, compor com `P1` apenas se `P1` for de ida; se `P1` já for total, não somar;
+- a identidade da oferta deve incluir o voo/data da volta ou declarar explicitamente que a oferta é “ida + volta mais barata compatível”, com regra estável;
+- `price_insights` continua metadado, não preço histórico;
+- qualquer mudança de composição exige teste de regressão com fixture real e atualização do contrato/OpenAPI.
+
+**Risco de não resolver:** o histórico pode registrar um valor que não corresponde ao produto exibido, e dois retornos diferentes podem colapsar no mesmo `externalKey`. Ambos são incompatíveis com a promessa de histórico e de oportunidade.
+
+### 15.6 Base, impostos, moeda e representação monetária
+
+**Estado atual comprovado:**
+
+- `normalizeSerpApiOffer()` grava `price: { currency, total: rawOffer.price, base: null, taxes: null }`.
+- `PriceHistory.base` e `.taxes` são `Float?`; `total` é `Float` obrigatório.
+- `assertNormalizedOffer()` exige `price.currency` e `price.total`, mas não exige `base`/`taxes`.
+- A persistência usa `offer.price.base ?? null` e `offer.price.taxes ?? null`; não converte ausência em zero.
+- A análise converte preços em centavos inteiros para comparação, mas a persistência continua em ponto flutuante.
+- O adaptador só aceita BRL: lê `search_parameters.currency`, normaliza para maiúsculas e falha se divergir; ausência usa BRL porque a requisição enviou BRL.
+- `observedAt` é `new Date()` no momento da escrita, depois da resposta; não é o timestamp da cotação do provedor.
+
+**Política proposta (sem migration nesta fase):**
+
+1. `total` é o valor autoritativo da observação. Não reconstruir total a partir de componentes.
+2. `base` e `taxes` só são preenchidos se o provedor expuser os dois de forma explícita, na mesma moeda e com semântica documentada. Caso contrário, permanecem `NULL`.
+3. Nunca derivar impostos por subtração (`total - base`), percentual estimado ou arredondamento. Isso inventaria decomposição tributária.
+4. Nunca converter `NULL` em `0`; `0` significa “zero conhecido”, `NULL` significa “não informado”.
+5. Não somar `base + taxes` ao `total`; a decomposição é informativa, não uma segunda cobrança. Se `total ≠ base + taxes`, o `total` prevalece e a divergência vira qualidade de dados, não ajuste silencioso.
+6. Uma moeda por observação; nenhuma conversão cambial automática; séries mistas continuam `INSUFFICIENT_DATA`/`MIXED_CURRENCY`. A aceitação de múltiplas moedas exige decisão de produto e de exibição.
+7. `observedAt` deve ser descrito como “momento da observação TripPulse”, não “momento da cotação”. Se o produto precisar de `quoteAt`, isso exige campo/contrato novo, não inferência.
+
+**Sobre `Float`:** `Float` do Prisma/PostgreSQL é ponto flutuante binário e não representa todos os decimais exatamente. Para preços em BRL, valores inteiros ou com duas casas geralmente sobrevivem à conversão para centavos, mas igualdade, soma e histórico de longo prazo não têm garantia decimal. A dívida é **bloqueante para uma liberação financeira séria** até uma decisão explícita: inteiro de menor unidade (por exemplo, centavos) com expoente da moeda, ou tipo decimal exato suportado pelo stack. Isso exigirá migration e revisão de todos os consumidores; não é escopo desta fase.
+
+**Sobre dupla contagem:** o TripPulse não deve exibir “total + impostos” nem “base + taxes” como se fossem valores adicionais. Se o provedor só entrega um preço único, a UI deve mostrar “preço total informado” e deixar a decomposição como indisponível. `price_insights` não é decomposição e não entra no histórico.
+
+### 15.7 Custos e viabilidade comercial
+
+**Fórmula e premissas:** `requisições/mês = viagens ativas × ciclos/mês × (1 + N)`. Cada requisição pode consumir 1 crédito; o cache padrão de 1 h pode evitar consumo, mas **não presumir** que erro, falha ou token inválido sejam gratuitos. Verificar o contador antes/depois de cada chamada. A tabela abaixo é o pior caso sem cache. Planos com U.S. Legal Shield começam no Production (US$ 150/mês, 15.000 buscas, 3.000/h), premissa conservadora diante da contradição entre a página de pricing e as condições específicas do benefício, registrada no §15.8. Preços oficiais consultados em 16/11/2026; impostos não incluídos.
+
+| Cenário | Viagens | Cadência | N | Requisições/mês | Plano mínimo com shield | Custo/mês | Custo/viagem |
+|---|---:|---:|---:|---:|---|---:|---:|
+| Pequena A | 50 | diária | 1 | 3.000 | Production 15k | US$ 150 | US$ 3,00 |
+| Pequena B | 50 | 6 h | 3 | 24.000 | Big Data 30k | US$ 275 | US$ 5,50 |
+| Pequena C | 50 | 15 min | 1 | 288.000 | Infrastructure 500k | US$ 2.750 | US$ 55,00 |
+| Média A | 500 | diária | 1 | 30.000 | Big Data 30k | US$ 275 | US$ 0,55 |
+| Média B | 500 | 6 h | 1 | 120.000 | Volume 250k | US$ 1.475 | US$ 2,95 |
+| Média C | 500 | 15 min | 1 | 2.880.000 | Cloud 3M | US$ 7.600 | US$ 15,20 |
+| Grande A | 5.000 | diária | 1 | 300.000 | Infrastructure 500k | US$ 2.750 | US$ 0,55 |
+| Grande B | 5.000 | 6 h | 1 | 1.200.000 | Cloud 2M | US$ 5.675 | US$ 1,14 |
+| Grande C | 5.000 | 6 h | 3 | 2.400.000 | Cloud 3M | US$ 7.600 | US$ 1,52 |
+| Grande D | 5.000 | 15 min | 1 | 28.800.000 | Cloud 29M | US$ 57.800 | US$ 11,56 |
+| Stress A | 50 | 15 min | 10 | 1.584.000 | Cloud 2M | US$ 5.675 | US$ 113,50 |
+| Stress B | 5.000 | 15 min | 3 | 57.600.000 | acima do catálogo | enterprise sob consulta | — |
+
+**Custo por requisição:** no Production, US$ 150 / 15.000 = **US$ 0,01 por busca** no uso integral; no Big Data, US$ 275 / 30.000 ≈ **US$ 0,00917**; no Volume, US$ 1.475 / 250.000 = **US$ 0,0059**. O custo por viagem da tabela é uma alocação do plano, não um preço marginal por requisição; capacidade ociosa encarece a viagem efetiva.
+
+**Limites e picos:**
+
+- Production cobre **2 viagens** a 15 min com N=1; a terceira excede. Com N=10, uma única viagem a 15 min consome 31.680 créditos e não cabe no Production.
+- Throughput do Production: 3.000 buscas/hora. 1.500 viagens com N=1 disparadas na mesma hora já ocupam 3.000. O scheduler atual é sequencial (uma viagem por vez), o que reduz o pico, mas aumenta a duração do ciclo; chamadas manuais a `/flights` não têm rate limit e podem furar o orçamento.
+- Cache de 1 h por consulta exata pode reduzir o consumo; a tabela não conta com isso. Se o produto promete 15 min, cache de 1 h é incompatível com a promessa de frescor; é preciso escolher entre frescor e custo.
+- `SERPAPI_MAX_OUTBOUND_EXPANSIONS=10` multiplica o custo por 11 no round-trip. Cobertura de todas as combinações ida×volta não existe: no máximo N idas, cada uma com a volta mais barata; não é busca exaustiva.
+- O plano Developer (US$ 75, 5.000) seria suficiente para 50 viagens diárias N=1 (3.000), mas o benefício **não está disponível nesse plano** segundo a página específica e os Termos (Seção 13) — apesar de a página de pricing exibir “U.S. Legal Shield” no cartão Developer. Para uso comercial que dependa do shield, o piso conservador é Production.
+
+**Ponto de inviabilidade:** a 15 min, 50 viagens N=1 custam US$ 55/viagem/mês só de API; 50 viagens N=10 custam US$ 113,50/viagem/mês. Mesmo a 6 h, 500 viagens N=1 custam US$ 2,95/viagem/mês antes de infraestrutura, suporte, taxas e margem. A viabilidade não pode ser declarada sem preço do produto; a fórmula de decisão é:
+
+```text
+receita_líquida_por_viagem > custo_api_por_viagem + infra + suporte + taxas + margem_alvo
+```
+
+**Recomendação de piloto:** N=1, cadência diária ou 6 h, 50–500 viagens, Production/Big Data, sem 15 min e sem N>1 por padrão. Medir cache hit, latência e custo real antes de ampliar. O modo 15 min deve ser tratado como recurso premium ou desativado no lançamento real.
+
+### 15.8 Revisão jurídica e comercial
+
+**Natureza da análise:** revisão documental, não parecer jurídico. As conclusões abaixo distinguem fato documentado, interpretação e lacuna que exige confirmação por escrito ou advogado.
+
+**Fontes primárias consultadas em 16/11/2026:**
+
+| Fonte | URL | Uso |
+|---|---|---|
+| Google Flights API | https://serpapi.com/google-flights-api | parâmetros, `departure_token`, `price`, `no_cache`, moeda |
+| Google Flights Booking Options | https://serpapi.com/google-flights-booking-options | `booking_options`, preço/taxas do itinerário selecionado |
+| Pricing | https://serpapi.com/pricing | planos, buscas, throughput, Legal Shield, cache/contagem |
+| Legal Documents | https://serpapi.com/legal | Termos de Serviço (atualizados em 27/08/2026), privacidade, retenção, foro |
+| U.S. Legal Shield | https://serpapi.com/us-legal-shield | cobertura, exclusões, território, planos |
+| Ordem judicial | https://storage.courtlistener.com/recap/gov.uscourts.cand.461513/gov.uscourts.cand.461513.62.0.pdf | `Google LLC v. SerpApi LLC`, N.D. Cal., 09/11/2026 |
+
+**Respostas às perguntas obrigatórias:**
+
+1. **Armazenar indefinidamente?** A SerpApi retém os dados de busca dela por 31 dias (política de privacidade). O contrato público não define prazo para cópias mantidas pelo cliente e não concede, de forma expressa, direito de armazenamento indefinido. **Não autorizado expressamente; exige confirmação escrita.**
+2. **Exibir aos usuários finais?** Não há licença explícita de exibição. A Seção 2 dos Termos restringe “reproduzir, duplicar, copiar, vender, revender ou explorar qualquer parte do Serviço” sem permissão escrita. **Não autorizado expressamente; exige confirmação escrita e revisão jurídica.**
+3. **Comercializar um produto baseado nos dados?** O Legal Shield cobre a coleta/parsing, não o uso posterior; a mesma Seção 2 restringe exploração comercial. **Não autorizado expressamente; não confundir com Legal Shield.**
+4. **Alertas derivados da variação histórica?** Não há cláusula específica sobre obras derivadas, análises ou alertas. **Pendente; exige confirmação escrita.**
+5. **Atribuição?** Não foi encontrada exigência de atribuição à SerpApi nos termos públicos. Marcas do Google, companhias aéreas, logos e regras tarifárias podem ter exigências próprias. **Pendente; confirmar com SerpApi e advogado.**
+6. **Responsabilidades do cliente?** Uso lícito, conformidade legal, indenização à SerpApi e exclusão de usos ilegais. **Documentado, mas amplo e unilateral.**
+7. **O que o Legal Shield cobre e quais planos são elegíveis?** Coleta/parsing lícitos de dados públicos de busca, até US$ 2 milhões. A página de pricing **exibe “U.S. Legal Shield” nos cartões Free, Starter e Developer**, além dos planos superiores; a página específica do benefício (“Production Plan and above”) e os Termos (Seção 13), que excluem expressamente “the Free, Starter, and Developer plans”, afirmam que o benefício existe **somente no Production+**. **Production+ é a premissa conservadora; não é licença de dados e exige confirmação escrita.**
+8. **Limitação territorial?** A FAQ diz que a cobertura se limita a claims sob lei estadual/federal dos EUA em tribunal dos EUA; leis estrangeiras e tribunais não americanos ficam fora. O título “worldwide legal coverage” se refere a clientes internacionais, não a cobertura jurídica global. **Cobertura apenas nos EUA.**
+9. **Interrupção sem aviso?** As Seções 4, 13 e 16 permitem modificar, suspender, remover ou terminar o serviço sem aviso e sem responsabilidade; existe SLA de 99,95% com créditos. **Sim, contratualmente possível.**
+10. **Autorização contratual clara para o modelo?** Não foi encontrada autorização específica para armazenar, exibir, comercializar ou gerar alertas. **Não; exige aditivo/confirmação escrita e advogado.**
+
+**Legal Shield ≠ licença de dados.** O shield é uma assunção de responsabilidade pela coleta/parsing, limitada e condicionada. Ele não concede direito de armazenar, exibir, vender ou criar produto derivado, e não cobre o uso posterior. Também não cobre DMCA — e o caso Google v. SerpApi é justamente sobre DMCA/Google Search.
+
+**Caso judicial:** `Google LLC v. SerpApi LLC`, No. 4:25-cv-10826-YGR (N.D. Cal.). Google ajuizou em 19/12/2025; em 20/07/2026 o tribunal rejeitou a primeira versão; em 09/11/2026 rejeitou a segunda versão da acusação, com autorização para emenda em 21 dias. Não há sentença final. O caso trata de Google Search/SearchGuard, **não de Google Flights**; não serve como validação de direitos sobre tarifas aéreas. O resultado favorável à SerpApi até aqui é um fato, não uma garantia para clientes.
+
+**Conclusão comercial/jurídica:** o modelo completo (armazenar histórico, exibir ofertas, cobrar pelo produto e gerar alertas) **não está autorizado de forma clara** pela documentação pública. Antes de `REAL`, obter confirmação escrita da SerpApi cobrindo especificamente esses usos e parecer de advogado sobre Google Flights, marcas, tarifas e jurisdição brasileira. Não apresentar o Legal Shield como licença.
+
+**Contradição documental sobre o Legal Shield:** a **página de pricing** exibe “U.S. Legal Shield” **também nos cartões Free, Starter e Developer**, além dos planos superiores — apresentação comercial que sugere disponibilidade em todos os planos. Em sentido contrário, a **página específica do benefício** diz “Production Plan and above” e os **Termos (Seção 13)** excluem expressamente “the Free, Starter, and Developer plans”. A contradição é entre a **apresentação comercial** e as **condições específicas do benefício**: a primeira sugere alcance amplo, as segundas restringem a Production+. A leitura conservadora é **Production+**, e permanece pendente a **confirmação escrita da SerpApi** sobre elegibilidade, cobertura e uso comercial. Não usar a exibição nos cartões inferiores para sustentar direito em plano que o Termo exclui.
+
+### 15.8.1 LGPD — análise preliminar (não é parecer jurídico)
+
+**Fluxo e categorias de dados.** O TripPulse recebe origem, destino, datas e nome da viagem — dados que podem ser pessoais ou vinculados a uma pessoa, embora hoje não haja autenticação e a titularidade ainda não esteja individualizada. O adaptador envia à SerpApi apenas a consulta de voo (aeroportos, datas, moeda, locale e classe), não nome, e-mail, documento ou pagamento. A SerpApi pode processar IP, metadados de requisição e resultados; o TripPulse persiste ofertas, histórico de preços e itens de monitoramento. A oferta normalizada não tem campo de token e o `booking_token` não é transportado para ela pelo fluxo atual, mas a ausência no raw/persistência ainda carece de teste específico de regressão. A chave da API é segredo de serviço, não dado pessoal do usuário.
+
+**Papéis dos agentes.** Em análise preliminar: TripPulse como controladora dos dados das viagens e do histórico; SerpApi como operadora/subprocessadora da consulta e do parsing; Google Flights e demais fornecedores como terceiros/subprocessadores da SerpApi; hospedagem, banco e observabilidade como subprocessadores do TripPulse. Os papéis definitivos dependem do contrato, do DPA e da autenticação futura.
+
+**Base legal.** Não há conclusão definitiva. Hipóteses a validar: execução de contrato ou procedimentos preliminares (art. 7º, V, LGPD); legítimo interesse (art. 7º, IX) para segurança, prevenção a fraude e melhoria; consentimento específico para marketing ou comunicações não necessárias; obrigação legal ou regulatória quando aplicável. A base escolhida deve constar do inventário de tratamentos e do aviso de privacidade.
+
+**Transferência internacional.** A SerpApi está nos Estados Unidos e pode usar subprocessadores em outras jurisdições. A transferência exige hipótese legal e mecanismo do art. 33 da LGPD (decisão de adequação, cláusulas contratuais padrão, normas corporativas globais ou outra hipótese legal), com avaliação documentada. A **Resolução CD/ANPD nº 19/2024** disciplina a transferência internacional e deve ser verificada quanto a escopo, cláusulas, prazos e transparência; a aplicabilidade concreta exige confirmação jurídica.
+
+**DPA e subprocessadores.** Solicitar à SerpApi o DPA vigente e a lista de subprocessadores; verificar finalidade, instruções, confidencialidade, segurança, notificação de incidentes, subcontratação, auditoria, retenção/eliminação e cooperação com titulares e ANPD. A política pública lista AWS, Cloudflare, Wasabi, Airbrake, Intercom, FrontApp, ActiveCampaign, MaxMind, Stripe, Postmark, Prelude, provedores de proxy e Google, entre outros; a lista pode mudar. O TripPulse precisa de mecanismo de aviso/objeção e de inventário próprio.
+
+**Minimização e transparência.** Não enviar à SerpApi dados que a consulta não exige; não persistir tokens, corpos brutos ou credenciais; sanitizar logs e itens de monitoramento; definir retenção e eliminação; informar no aviso de privacidade a finalidade, os destinatários, a transferência internacional e os direitos do titular. Minimização não elimina a necessidade de base legal, DPA e avaliação de transferência.
+
+**Conclusão preliminar:** a LGPD exige análise e documentação antes de `REAL`, mas esta subseção **não conclui** que o tratamento é lícito ou ilícito. DPA, base legal, transferência internacional, retenção e transparência devem ser confirmados por advogado/DPO e pela SerpApi.
+
+### 15.9 Checklist de segurança
+
+| Controle | Estado | Evidência / lacuna |
+|---|---|---|
+| Chave apenas no backend | ✅ | `SERPAPI_API_KEY` em env; closure; não versionada |
+| Chave em URL de saída | 🟡 | exigência do provedor; TLS; não logada pela aplicação, mas pode aparecer em telemetria de rede |
+| Chave em mensagens de erro | ✅ | sanitização e testes sintéticos; falta teste integrado de logs |
+| `departure_token` | ✅ | usado só na 2ª requisição; removido do raw `outbound`/`return`; testes cobrem raw e normalizado; não persistido |
+| `booking_token` | 🟡 | nunca enviado; **não removido do raw `return`**; não é transportado para a oferta normalizada pelo fluxo atual; falta teste específico de regressão para ausência no raw/persistência |
+| Barreira `REAL` pré-provider | ✅ | `assertOnlySimulatedProviders` antes de banco/rede |
+| Barreira pós-normalização | ✅ | `assertOnlySimulatedOffers` |
+| Barreira na persistência | ✅ | D5 em `persistOfferSnapshot` |
+| Timeout | 🟡 | 30 s por requisição; sem orçamento total |
+| Retry/backoff/jitter | ❌ | não implementado |
+| Resultado parcial | ✅ | fail-closed; erro em qualquer expansão aborta o trip |
+| Idempotência | ❌ | nova observação a cada execução; sem chave de idempotência |
+| Rate limit / quota | ❌ | `/flights` aberto; sem limite por usuário/IP/período |
+| Orçamento/custo | ❌ | sem contador de créditos nem alerta |
+| Autenticação/multiusuário | ❌ | Fase 6; viagens globais |
+| Cache/frescor | 🟡 | cache de 1 h aceito por default; sem política |
+| Circuit breaker | ❌ | indisponibilidade vira erro genérico; sem disjuntor |
+| Kill switch runtime | 🟡 | flags exigem restart; sem desligamento em quente |
+| Observabilidade | ❌ | sem métricas de provider, latência, erro, cache ou custo |
+| Logs/redaction | 🟡 | logger ativo; sem redaction explícita; teste integrado pendente |
+| D5/D6/D7 | ✅ | preservados; nenhuma alteração nesta fase |
+| Testes com provedor real | ❌ | somente fixtures sintéticas |
+
+**Conclusão:** a barreira e a confidencialidade básica estão corretas, mas faltam controles essenciais para exposição comercial: orçamento, idempotência, rate limit, kill switch, observabilidade, disjuntor e teste integrado de logs.
+
+### 15.10 Fatos, interpretações e lacunas
+
+| Classe | Itens |
+|---|---|
+| **Fato documentado** | fluxo de duas requisições com `departure_token`; parâmetros de `type=1`; cache de 1 h por consulta exata; a documentação oficial informa contagem de buscas bem-sucedidas, mas a cobrança de falhas/token inválido não é presumida e deve ser medida no contador; planos e preços publicados; Legal Shield exibido nos cartões de todos os planos na página de pricing, mas restrito ao Production+ pela página específica do benefício e pelos Termos (Seção 13), que excluem Free/Starter/Developer; cobertura limitada a claims nos EUA; retenção de 31 dias na SerpApi; Termos que restringem exploração sem permissão escrita; decisão judicial de 09/11/2026. |
+| **Interpretação** | a hipótese de que o `price` da segunda resposta seja o total do trip; a leitura de que a Seção 2 exige autorização escrita para o modelo; a estimativa de que o cache possa reduzir custos; a classificação de “inviável” para 15 min/N=10 sem preço de produto. |
+| **Não encontrado** | cláusula expressa autorizando armazenamento indefinido, exibição a usuários finais, comercialização de produto derivado ou alertas; exigência de atribuição à SerpApi; definição oficial inequívoca do preço do round-trip; política de retenção para cópias do cliente; cobertura do Legal Shield para DMCA ou uso posterior. |
+| **Exige confirmação escrita da SerpApi** | licença de uso dos resultados; armazenamento/exibição/comercialização; alertas derivados; atribuição; retenção; comportamento de planos/limites; eventual suporte a Google Flights. |
+| **Exige advogado** | licença de dados e propriedade intelectual; Google Flights/termos do Google; marcas; DMCA; proteção ao consumidor; LGPD (base legal, transferência internacional, Resolução CD/ANPD 19/2024, DPA e subprocessadores); contratos com usuários; jurisdição e riscos de litígio. |
+| **Lacuna de teste** | ausência de teste específico de regressão para `booking_token` no raw/persistência; o adaptador não o envia e a normalização não o transporta para a oferta, mas o código remove apenas `departure_token`. |
+
+### 15.11 Critérios formais de liberação REAL
+
+Todos são **impeditivos** até resolução documentada. Qualquer item aberto mantém `REAL` bloqueado.
+
+- [ ] **D3 validado** com conta autorizada, evidências R1–R7 e fixtures reais sanitizadas.
+- [ ] **Contador de créditos** verificado antes/depois de cada chamada, inclusive em falha e token inválido.
+- [ ] **Preço round-trip** confirmado contra `booking_options`/UI, com seller e preço correspondente.
+- [ ] **Cache e `no_cache=true`** testados separadamente (R7-C/R7-N).
+- [ ] **Identidade da oferta** distingue a volta ou declara uma semântica estável e testada.
+- [ ] **Base/impostos** com política definida; nenhum valor derivado ou inventado.
+- [ ] **Moeda** validada; política para múltiplas moedas definida.
+- [ ] **`Float`** resolvido (inteiro de menor unidade/decimal) ou risco formalmente aceito por escrito.
+- [ ] **Direitos de dados** confirmados por escrito: armazenar, exibir, comercializar, alertar e reter.
+- [ ] **Legal Shield** ativo em Production+, divergência de planos esclarecida por escrito e escopo/exclusões compreendidos; parecer jurídico.
+- [ ] **LGPD**: base legal, papéis, transferência internacional, Resolução CD/ANPD 19/2024, DPA, subprocessadores, retenção e transparência documentados; parecer jurídico/DPO.
+- [ ] **Viabilidade** demonstrada com plano, throughput, custo por viagem e orçamento máximo.
+- [ ] **Autenticação/rate limit/multiusuário** implementados ou piloto fechado com allowlist explícita.
+- [ ] **Idempotência** de observações e de requisições implementada.
+- [ ] **Retry/backoff/jitter, circuit breaker e limite de consumo** implementados.
+- [ ] **Kill switch em runtime** e plano de desativação emergencial testados.
+- [ ] **Logs com redaction**, auditoria de falhas e teste integrado de vazamento.
+- [ ] **Observabilidade** de latência, erros, cache, requisições e custo com alertas.
+- [ ] **Testes de integração reais** no CI e **auditoria independente aprovada**.
+- [ ] **Plano de contingência** para indisponibilidade, aumento de preço, mudança de termos e interrupção do provedor.
+
+**Nenhum desses itens foi implementado ou validado nesta fase.** O objetivo foi produzi-los como critérios objetivos, não declarar aprovação.
+
+### 15.12 Alterações documentais e estado final
+
+**Alterações desta fase:**
+
+- `docs/contexto.md`: roadmap atualizado (Fase 4 publicada; Fase 5 com planejamento concluído em 16/11/2026; liberação REAL bloqueada) e novo §12 com o planejamento detalhado.
+- `docs/relatorio-continuidade.md`: cabeçalho e estado por funcionalidade atualizados para `a68bf73`; novo §15 com auditoria, protocolo, preços, custos, jurídico, segurança e critérios.
+- `README.md`: quatro correções pontuais — (a) D3 registrado como **publicado em `6abba27`** (CI `43788295629`), não mais “implementado localmente/sem commit”; (b) `booking_token` restrito a “**nas requisições**” no bullet de cobertura; (c) item de tokens separando `departure_token` (usado só na 2ª requisição, removido do raw por cópia, com testes em `outbound`, `return` e no objeto normalizado) de `booking_token` (**nunca enviado**, não removido do raw `return`, não transportado para a oferta normalizada pelo fluxo atual, sem teste específico de regressão); (d) pendência (5) com o resumo do **protocolo R1–R7** (6 requisições HTTP positivas; 8 com R7-C/R7-N; teste negativo fora da conta), a **dependência de cache** (R4, R5/R6 condicionais, R7-C com cache padrão e R7-N com `no_cache=true`) e a **contabilidade de créditos** (requisição não equivale a crédito; cobrança não presumida em falha ou token inválido; contador conferido antes/depois de cada chamada; sem custo exato sem contador).
+
+**Revisão documental pós-diff (16/11/2026):** correção dos checkpoints históricos (3.5, 3.6 e Fase 4); protocolo R1–R7 com duas execuções positivas completas (**6 requisições HTTP; 8 com R7-C/R7-N**), separação entre requisições HTTP e créditos potenciais, dependência de cache explicitada (R4, R5/R6 condicionais e R7-C) e **R7-N** com `no_cache=true`, contador de créditos e cobrança não presumida em falha/token inválido, sem prometer custo exato sem contador; captura ampliada de R3 (`selected_flights`, `separate_tickets`, `together`, `departing`, `returning`, `baggage_prices`, seller e preço); registro da **contradição do Legal Shield** entre a página de pricing (que exibe “U.S. Legal Shield” também nos cartões Free, Starter e Developer) e a página específica do benefício mais os Termos (Seção 13), que o restringem a Production+ — mantendo Production+ como premissa conservadora e a confirmação escrita como pendência; **contabilidade de créditos** descrita como perda de expectativa de cache hit (e não como consumo necessário) quando parâmetros mudam, o token expira ou o cache vence, com conferência do contador; subseção LGPD preliminar; separação documental entre `departure_token` (removido do raw) e `booking_token` (não enviado; não removido do raw; não transportado para a oferta normalizada pelo fluxo atual; teste específico de regressão ausente).
+
+**Correção final de coerência (16/11/2026):** `§12.6` (contexto) e `§15.8` (este relatório) passaram a descrever o Legal Shield como **contradição entre a apresentação comercial e a condição específica do benefício** — a página de pricing exibe “U.S. Legal Shield” nos cartões Free, Starter e Developer, além dos superiores, enquanto a página específica do benefício e os Termos (Seção 13) o restringem a **Production+**; a premissa conservadora continua Production+ e a confirmação escrita da SerpApi permanece pendente. A frase sobre cache em `§12.2`/`§15.4` passou a registrar que a consulta **perde a expectativa de cache hit e pode consumir crédito ao resultar em busca bem-sucedida**, sem afirmar consumo necessário, mantendo a conferência do contador antes/depois de cada chamada. `§15.10` acompanhou as duas correções.
+
+**Não alterado:** código de aplicação, `apps/api/src/**`, `prisma/schema.prisma`, migrations, `package.json`/lockfile, `.env.example`, barreira `REAL`, normalizador, contratos de providers, D5/D6/D7, testes ou fixtures. Nenhum staging, commit ou push.
+
+**Estado Git final:** `main == origin/main == a68bf73`, com apenas os três arquivos de documentação modificados no working tree e staging vazio. Verificado por `git status`, `git diff --stat` e `git diff --check` (exit 0); nenhum arquivo de código, Prisma, migration, dependência ou teste foi alterado.
+
+### 15.13 Riscos e próximos passos
+
+**Riscos principais:**
+
+1. **Jurídico/comercial:** ausência de autorização expressa para o modelo; Legal Shield não é licença e não cobre uso posterior/DMCA; cobertura apenas nos EUA; termos permitem interrupção.
+2. **Produto/preço:** usar `P2` sem confirmar pode registrar preço errado; a identidade sem volta pode misturar produtos e invalidar histórico/oportunidades.
+3. **Financeiro:** 15 min e N>1 elevam o custo a US$ 55–113,50/viagem/mês; Production não sustenta 3 viagens a 15 min; picos e chamadas manuais não têm limite.
+4. **Operacional:** sem idempotência, rate limit, orçamento, disjuntor, kill switch em runtime ou observabilidade de custo.
+5. **Privacidade/segurança:** cache implícito, logs sem redaction explícita, teste integrado de vazamento pendente e chave em query do provedor.
+6. **Qualidade de dados:** `observedAt` local, base/taxes nulos, `Float`, moeda única e cobertura parcial de retornos.
+
+**Próximos passos, em ordem, após revisão do usuário:**
+
+1. Aprovar ou rejeitar este planejamento e definir o orçamento máximo da validação.
+2. Autorizar a validação D3 em conta de teste, com protocolo R1–R7 e contador de créditos, sem tocar no ambiente de produção.
+3. Capturar evidências e fixtures sanitizadas; comparar R3/R6/R7-C/R7-N e decidir a semântica do preço com `B`.
+4. Em etapa de implementação separada, corrigir identidade de round-trip e política monetária.
+5. Obter confirmação escrita da SerpApi e parecer jurídico antes de qualquer uso comercial.
+6. Definir piloto, plano, cadência, N e orçamento; implementar controles de segurança.
+7. Submeter a auditoria independente e só então propor a liberação de `REAL`.
+
+**Este relatório não declara o D3 validado com provedor real, não declara viabilidade comercial e não autoriza a remoção da barreira 503.**

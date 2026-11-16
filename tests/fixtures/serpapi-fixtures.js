@@ -1,4 +1,4 @@
-// FIXTURES SINTÉTICAS do SerpApi Google Flights — Dia 11.8.
+// FIXTURES SINTÉTICAS do SerpApi Google Flights — Dia 11.8 (atualizadas no D3).
 //
 // ATENÇÃO: TODAS as respostas aqui são SINTÉTICAS — construídas à mão para
 // testar o adaptador SEM conta SerpApi e SEM internet. Nenhuma delas é uma
@@ -9,7 +9,10 @@
 // Regras das fixtures:
 // - Formato: objetos nas chaves usadas pelo adaptador/normalizador
 //   (`best_flights`/`other_flights`, `flights`, `departure_airport.time`,
-//   `price`, `departure_token`, `price_insights`).
+//   `price`, `departure_token`, `price_insights`, `search_metadata`,
+//   `search_parameters`).
+// - Status de sucesso é `Success`: `Processing`, `Queued` e `Error` são
+//   falhas; `search_metadata` pode ser omitido.
 // - Códigos, companhias e preços são fictícios (AAA/BBB, Fake Air) e nunca
 //   correspondem a ofertas reais do mercado.
 
@@ -69,17 +72,23 @@ export function fakeItinerary({
 }
 
 // Resposta inicial sintética para round-trip: mercado de ida com tokens.
+// Opções do D3: `status: null` omite `search_metadata`; `currency: null`
+// omite `search_parameters.currency`; `error` simula erro com HTTP 200.
 export function fakeInitialRoundTripResponse({
   outbounds = [],
   priceInsights = undefined,
+  currency = 'BRL',
+  status = 'Success',
+  error = undefined,
 } = {}) {
   return {
-    search_metadata: { id: 'SYNTHETIC', status: 'Complete' },
+    ...(status === null ? {} : { search_metadata: { id: 'SYNTHETIC', status } }),
     search_parameters: {
       engine: 'google_flights',
       type: 1,
-      currency: 'BRL',
+      ...(currency === null ? {} : { currency }),
     },
+    ...(error === undefined ? {} : { error }),
     ...(priceInsights ? { price_insights: priceInsights } : {}),
     best_flights: outbounds,
     other_flights: [],
@@ -90,15 +99,19 @@ export function fakeInitialRoundTripResponse({
 export function fakeReturnResponse({
   returns = [],
   priceInsights = undefined,
+  currency = 'BRL',
+  status = 'Success',
+  error = undefined,
 } = {}) {
   return {
-    search_metadata: { id: 'SYNTHETIC_RETURN', status: 'Complete' },
+    ...(status === null ? {} : { search_metadata: { id: 'SYNTHETIC_RETURN', status } }),
     search_parameters: {
       engine: 'google_flights',
       type: 1,
-      currency: 'BRL',
+      ...(currency === null ? {} : { currency }),
       departure_token: 'SYNTHETIC_DEPARTURE_TOKEN',
     },
+    ...(error === undefined ? {} : { error }),
     ...(priceInsights ? { price_insights: priceInsights } : {}),
     best_flights: returns,
     other_flights: [],
@@ -106,14 +119,21 @@ export function fakeReturnResponse({
 }
 
 // Resposta sintética de ida simples (type=2).
-export function fakeOneWayResponse({ outbounds = [], priceInsights = undefined } = {}) {
+export function fakeOneWayResponse({
+  outbounds = [],
+  priceInsights = undefined,
+  currency = 'BRL',
+  status = 'Success',
+  error = undefined,
+} = {}) {
   return {
-    search_metadata: { id: 'SYNTHETIC_ONEWAY', status: 'Complete' },
+    ...(status === null ? {} : { search_metadata: { id: 'SYNTHETIC_ONEWAY', status } }),
     search_parameters: {
       engine: 'google_flights',
       type: 2,
-      currency: 'BRL',
+      ...(currency === null ? {} : { currency }),
     },
+    ...(error === undefined ? {} : { error }),
     ...(priceInsights ? { price_insights: priceInsights } : {}),
     best_flights: outbounds,
     other_flights: [],

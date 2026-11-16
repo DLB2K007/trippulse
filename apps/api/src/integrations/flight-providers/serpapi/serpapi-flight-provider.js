@@ -22,6 +22,21 @@
 //   (preço, duração total, hora da partida, companhia/voo) e os N primeiros
 //   são expandidos; a mesma consulta produz sempre as mesmas escolhas —
 //   comparabilidade histórica preservada.
+// - SEGUNDA REQUISIÇÃO (D3): Alternativa B — repete TODOS os parâmetros da
+//   1ª pesquisa (engine, hl, gl, currency, travel_class, departure_id,
+//   arrival_id, outbound_date, return_date) e acrescenta `type=1` explícito
+//   + `departure_token`. É o padrão do exemplo oficial do SerpApi (preservar
+//   os parâmetros e atualizar o token) e evita depender do default `type=1`.
+//   `booking_token` nunca é enviado; `api_key` só entra em performRequest.
+// - RESPOSTA VÁLIDA (D3): HTTP 200 não basta. `error` não vazio é falha do
+//   provedor; `search_metadata.status` presente precisa ser `Success`
+//   (case-insensitive) — `Processing`, `Queued`, `Error` e desconhecido
+//   falham por segurança. `search_metadata` ausente é tolerado. Mercado
+//   vazio só é aceito quando não há erro/status de falha.
+// - MOEDA (D3): a moeda efetiva vem de `search_parameters.currency`
+//   (normalizada para maiúsculas). Divergência de BRL falha alto — não há
+//   conversão nem mistura de moedas no histórico. Ausente -> BRL porque a
+//   requisição enviou `currency=BRL` explicitamente.
 // - PREÇO DO ROUND-TRIP: PENDÊNCIA registrada — não assumimos que o preço
 //   da resposta inicial representa o total combinado ida+volta; usamos o
 //   preço do itinerário de retorno da 2ª resposta como preço do trip
@@ -37,16 +52,127 @@
 //   match pode ser `kgmid` (quando o resolver passar a fornecer) ou `iata`.
 // - CREDENCIAL: a API key vive fechada nesta closure; NUNCA aparece em logs
 //   ou mensagens de erro (sanitizeMessage remove qualquer ocorrência).
+// - TOKEN: `departure_token` é usado somente para a 2ª requisição. Os objetos
+//   brutos devolvidos por `search()` não o contêm (cópias sem a propriedade
+//   são criadas depois da expansão; a resposta original nunca é mutada).
 
 import { getDefaultAirportResolver } from '../../airports/airport-resolver.js';
 
 const SERPAPI_ENDPOINT = 'https://serpapi.com/search.json';
 const DEFAULT_TIMEOUT_MS = 30000;
 const MAX_EXPANSION_LIMIT = 10;
+const REQUESTED_CURRENCY = 'BRL';
+const SUCCESS_STATUS = 'success';
+// Vocabulário de falhas conhecido do SerpApi. Qualquer outro valor é tratado
+// como desconhecido e NUNCA é ecoado na mensagem (conteúdo externo arbitrário).
+const KNOWN_FAILURE_STATUSES = new Map([
+  ['processing', 'Processing'],
+  ['queued', 'Queued'],
+  ['error', 'Error'],
+]);
 
-// Remove qualquer ocorrência do padrão api_key=... de textos de erro/log.
-function sanitizeMessage(message) {
-  return String(message).replace(/api_key=[^&\s"']+/gi, 'api_key=[REDACTED]');
+// Formas em que um valor sensível conhecido pode aparecer em texto externo.
+// Inclui a forma literal, encodeURIComponent (espaço -> %20) e
+// URLSearchParams (espaço -> +).
+function secretForms(secret) {
+  if (typeof secret !== 'string' || secret.length === 0) {
+    return [];
+  }
+
+  const forms = new Set([secret]);
+  try {
+    forms.add(encodeURIComponent(secret));
+  } catch {
+    // A forma literal continua sendo removida mesmo se a codificação falhar.
+  }
+  try {
+    const encoded = new URLSearchParams({ value: secret }).toString();
+    forms.add(encoded.slice('value='.length));
+  } catch {
+    // Idem acima.
+  }
+
+  return [...forms].filter((form) => form.length > 0);
+}
+
+// Defesa em profundidade: remove valores sensíveis conhecidos ANTES de aplicar
+// os padrões de URL. O regex de prefixo é apenas fallback; não é a garantia
+// principal, pois tokens podem conter `&`, espaços ou aparecer sem prefixo.
+function sanitizeMessage(message, secrets = []) {
+  let text = String(message);
+
+  for (const secret of secrets) {
+    for (const form of secretForms(secret)) {
+      text = text.split(form).join('[REDACTED]');
+    }
+  }
+
+  return text
+    .replace(/api_key=[^&\s"']+/gi, 'api_key=[REDACTED]')
+    .replace(/departure_token=[^&\s"']+/gi, 'departure_token=[REDACTED]')
+    .replace(/https?:\/\/\S+/gi, '[REDACTED_URL]');
+}
+
+// Valida uma resposta HTTP 200 do SerpApi ANTES de interpretá-la como mercado.
+// Regras do D3:
+// - `error` não vazio = falha do provedor (mesmo com HTTP 200). O texto externo
+//   NÃO é propagado; a mensagem é controlada pela aplicação.
+// - `search_metadata.status` presente e diferente de `Success` = falha
+//   (`Processing`, `Queued`, `Error` e desconhecido -> fail-closed). Status
+//   desconhecido não é ecoado.
+// - `search_metadata` ausente é tolerado (a documentação não garante o campo).
+function assertSuccessfulResponse(response, context, secrets = []) {
+  if (response === null || typeof response !== 'object' || Array.isArray(response)) {
+    throw new Error(`SerpApi: resposta inválida em ${context} (não é um objeto).`);
+  }
+
+  const error = response.error;
+  if (error !== undefined && error !== null && String(error).trim() !== '') {
+    // Não incluir String(error): o conteúdo é externo e pode conter URL,
+    // api_key, departure_token ou qualquer outro dado sensível.
+    throw new Error(
+      sanitizeMessage(`SerpApi: erro do provedor em ${context}.`, secrets)
+    );
+  }
+
+  const metadata = response.search_metadata;
+  const status = metadata !== null && typeof metadata === 'object' ? metadata.status : undefined;
+  if (status !== undefined && status !== null) {
+    const normalized = String(status).trim();
+    if (normalized.toLowerCase() !== SUCCESS_STATUS) {
+      const knownFailure = KNOWN_FAILURE_STATUSES.get(normalized.toLowerCase());
+      const safeStatus = knownFailure ? `"${knownFailure}"` : 'desconhecido';
+      throw new Error(
+        sanitizeMessage(
+          `SerpApi: status ${safeStatus} em ${context} (esperado "Success").`,
+          secrets
+        )
+      );
+    }
+  }
+}
+
+// Moeda efetiva declarada pela resposta. Ausente -> fallback para a moeda
+// explicitamente solicitada (`currency=BRL`) — nunca conversão implícita.
+// Divergência de BRL é erro alto: melhor falhar do que rotular preço errado.
+function resolveResponseCurrency(response, context) {
+  const parameters = response.search_parameters;
+  const reported =
+    parameters !== null && typeof parameters === 'object' ? parameters.currency : undefined;
+
+  if (reported === undefined || reported === null || String(reported).trim() === '') {
+    return REQUESTED_CURRENCY;
+  }
+
+  const normalized = String(reported).trim().toUpperCase();
+  if (normalized !== REQUESTED_CURRENCY) {
+    // Não ecoar o valor externo: ele é conteúdo arbitrário do provedor. O
+    // contexto e a moeda solicitada são suficientes para diagnóstico seguro.
+    throw new Error(
+      `SerpApi: moeda da resposta em ${context} difere da solicitada (${REQUESTED_CURRENCY}).`
+    );
+  }
+  return normalized;
 }
 
 function requireIsoDate(value, label) {
@@ -158,32 +284,52 @@ export function createSerpApiFlightProvider({
   // é incluída em mensagens de erro — apenas códigos HTTP genéricos.
   async function performRequest(params, context) {
     const searchParams = new URLSearchParams({ ...params, api_key: trimmedKey });
+    const secrets = [trimmedKey, params.departure_token].filter(
+      (value) => typeof value === 'string' && value.length > 0
+    );
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const response = await fetchImpl(`${SERPAPI_ENDPOINT}?${searchParams.toString()}`, {
-        method: 'GET',
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        throw new Error(`SerpApi: HTTP ${response.status} em ${context}.`);
+      let response;
+      try {
+        response = await fetchImpl(`${SERPAPI_ENDPOINT}?${searchParams.toString()}`, {
+          method: 'GET',
+          signal: controller.signal,
+        });
+      } catch (error) {
+        if (error && error.name === 'AbortError') {
+          throw new Error(`SerpApi: timeout da requisição em ${context}.`);
+        }
+        // Nunca propagar error.message de rede: pode conter a URL completa,
+        // a api_key ou o departure_token. A mensagem é controlada aqui.
+        throw new Error(
+          sanitizeMessage(`SerpApi: falha de rede em ${context}.`, secrets)
+        );
       }
 
-      const text = await response.text();
+      if (!response.ok) {
+        const safeStatus = Number.isInteger(response.status) ? response.status : 'desconhecido';
+        throw new Error(`SerpApi: HTTP ${safeStatus} em ${context}.`);
+      }
+
+      let text;
+      try {
+        text = await response.text();
+      } catch (error) {
+        if (error && error.name === 'AbortError') {
+          throw new Error(`SerpApi: timeout da requisição em ${context}.`);
+        }
+        throw new Error(
+          sanitizeMessage(`SerpApi: falha de rede em ${context}.`, secrets)
+        );
+      }
+
       try {
         return JSON.parse(text);
       } catch {
         throw new Error(`SerpApi: resposta não é JSON válido em ${context}.`);
       }
-    } catch (error) {
-      if (error && error.name === 'AbortError') {
-        throw new Error(`SerpApi: timeout da requisição em ${context}.`);
-      }
-      // Erros de rede/HTTP: repassamos apenas a mensagem sanitizada — a
-      // mensagem original de rede não deve conter a URL com credencial.
-      throw new Error(sanitizeMessage(error && error.message ? error.message : 'falha de rede'));
     } finally {
       clearTimeout(timer);
     }
@@ -208,7 +354,7 @@ export function createSerpApiFlightProvider({
       engine: 'google_flights',
       hl: 'pt-BR',
       gl: 'br',
-      currency: 'BRL',
+      currency: REQUESTED_CURRENCY,
       travel_class: 1, // economia (default do produto; documentado no mapeador)
       type: isRoundTrip ? 1 : 2,
       departure_id: departureId,
@@ -228,6 +374,17 @@ export function createSerpApiFlightProvider({
       outbound: itinerary,
       ...extra,
     };
+  }
+
+  // O token só é necessário até a 2ª requisição. Copiamos o itinerário para
+  // remover a propriedade sem mutar a resposta original recebida do SerpApi.
+  // Não há limpeza recursiva: o token é um campo de topo do itinerário.
+  function withoutDepartureToken(itinerary) {
+    if (itinerary === null || typeof itinerary !== 'object' || Array.isArray(itinerary)) {
+      return itinerary;
+    }
+    const { departure_token: _departureToken, ...rest } = itinerary;
+    return rest;
   }
 
   async function search(query, options = {}) {
@@ -261,14 +418,16 @@ export function createSerpApiFlightProvider({
 
     // REQUISIÇÃO 1 (sempre): mercado de ida.
     const initial = await performRequest(baseParams, 'busca inicial');
+    assertSuccessfulResponse(initial, 'busca inicial', [trimmedKey]);
+    const currency = resolveResponseCurrency(initial, 'busca inicial');
     const outboundItineraries = extractItineraries(initial, 'busca inicial');
     const priceInsights = initial.price_insights ?? null;
 
     if (!isRoundTrip) {
       // Ida simples: NENHUMA expansão (1 requisição por ciclo).
       return outboundItineraries.map((itinerary) =>
-        rawFromItinerary(itinerary, {
-          currency: 'BRL',
+        rawFromItinerary(withoutDepartureToken(itinerary), {
+          currency,
           type: 'one way',
           price: itinerary.price,
           extra: priceInsights ? { price_insights: priceInsights } : {},
@@ -325,17 +484,22 @@ export function createSerpApiFlightProvider({
     // devolvida se qualquer expansão selecionada falhar.
     const rawOffers = [];
     for (const outbound of selected) {
-      const second = await performRequest(
-        {
-          engine: 'google_flights',
-          hl: 'pt-BR',
-          gl: 'br',
-          currency: 'BRL',
-          travel_class: 1,
-          departure_token: outbound.departure_token,
-        },
-        'expansão de retorno'
-      );
+      // Alternativa B (D3): a 2ª requisição preserva TODO o contexto da 1ª
+      // pesquisa e só acrescenta o seletor de retorno. `type=1` é explícito
+      // (não dependemos do default documentado). `api_key` continua sendo
+      // anexada exclusivamente por performRequest.
+      const secondParams = {
+        ...baseParams,
+        type: 1,
+        departure_token: outbound.departure_token,
+      };
+
+      const second = await performRequest(secondParams, 'expansão de retorno');
+      assertSuccessfulResponse(second, 'expansão de retorno', [
+        trimmedKey,
+        outbound.departure_token,
+      ]);
+      const secondCurrency = resolveResponseCurrency(second, 'expansão de retorno');
       const returnItineraries = extractItineraries(second, 'expansão de retorno');
 
       if (returnItineraries.length === 0) {
@@ -350,14 +514,18 @@ export function createSerpApiFlightProvider({
       // assumimos que representa o total combinado ida+volta.
       const chosenReturn = sortItinerariesDeterministic(returnItineraries)[0];
 
+      // A expansão terminou: o token não deve permanecer nos objetos brutos
+      // devolvidos ao serviço. A resposta original permanece intacta.
+      const rawOutbound = withoutDepartureToken(outbound);
+      const rawReturn = withoutDepartureToken(chosenReturn);
+
       rawOffers.push(
-        rawFromItinerary(outbound, {
-          currency: 'BRL',
+        rawFromItinerary(rawOutbound, {
+          currency: secondCurrency,
           type: 'round trip',
           price: chosenReturn.price,
           extra: {
-            return: chosenReturn,
-            departure_token: outbound.departure_token,
+            return: rawReturn,
             ...(second.price_insights ? { price_insights: second.price_insights } : {}),
           },
         })

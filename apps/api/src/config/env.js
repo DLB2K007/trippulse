@@ -122,6 +122,29 @@ function loadSerpApiEnv() {
   };
 }
 
+// Documentação OpenAPI/Swagger (Fase 4) — DESABILITADA por padrão.
+// Mesmo booleano estrito do scheduler/SerpApi: apenas 'true'/'1' habilitam;
+// valor não reconhecido desativa e avisa. Não usar NODE_ENV como atalho: a
+// exposição da documentação é uma decisão operacional explícita.
+function loadApiDocsEnv() {
+  const rawEnabled = process.env.API_DOCS_ENABLED;
+  const normalized = (rawEnabled ?? '').trim().toLowerCase();
+  const enabled = SCHEDULER_TRUTHY.has(normalized);
+
+  if (
+    rawEnabled !== undefined &&
+    normalized !== '' &&
+    !SCHEDULER_TRUTHY.has(normalized) &&
+    !SCHEDULER_KNOWN_OFF.has(normalized)
+  ) {
+    console.warn(
+      `API_DOCS_ENABLED='${rawEnabled}' não reconhecido: documentação DESABILITADA (aceitos apenas 'true' ou '1').`
+    );
+  }
+
+  return { enabled };
+}
+
 function loadShutdownTimeoutEnv() {
   const raw = process.env.SHUTDOWN_TIMEOUT_MS;
   const text = (raw ?? '').trim();
@@ -149,5 +172,6 @@ export function loadEnv() {
     shutdownTimeoutMs: loadShutdownTimeoutEnv(),
     monitoringScheduler: loadMonitoringSchedulerEnv(),
     serpapi: loadSerpApiEnv(),
+    apiDocs: loadApiDocsEnv(),
   };
 }

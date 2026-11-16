@@ -88,7 +88,7 @@ export async function startServer({
     throw new TypeError('shutdownTimeoutMs precisa ser um inteiro positivo.');
   }
 
-  const app = createApplication();
+  const app = createApplication({ docsEnabled: env.apiDocs?.enabled === true });
   let scheduler = null;
 
   // Promessa do encerramento corrente — a base da idempotência: sinais

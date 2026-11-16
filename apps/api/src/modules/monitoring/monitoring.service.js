@@ -89,6 +89,157 @@ function isSingleRunningConflict(error) {
   );
 }
 
+// Fronteira de leitura do JSONB `monitoring_runs.items`: o schema Prisma não
+// valida o conteúdo. Cada item precisa pertencer a UMA das três variantes
+// fechadas do contrato (OK, FAILED, SKIPPED); propriedades desconhecidas são
+// rejeitadas, não silenciosamente aceitas. As contagens de OK são opcionais
+// para preservar itens históricos gravados antes do contrato atual.
+const MONITORING_ITEM_SHAPE = Object.freeze({
+  OK: Object.freeze({
+    allowed: Object.freeze([
+      'tripId',
+      'status',
+      'opportunityCount',
+      'evaluatedOfferCount',
+      'containsSimulatedData',
+    ]),
+    required: Object.freeze(['tripId', 'status']),
+  }),
+  FAILED: Object.freeze({
+    allowed: Object.freeze([
+      'tripId',
+      'status',
+      'stage',
+      'error',
+      'opportunityCount',
+      'evaluatedOfferCount',
+      'containsSimulatedData',
+    ]),
+    required: Object.freeze([
+      'tripId',
+      'status',
+      'stage',
+      'error',
+      'opportunityCount',
+      'evaluatedOfferCount',
+      'containsSimulatedData',
+    ]),
+  }),
+  SKIPPED: Object.freeze({
+    allowed: Object.freeze([
+      'tripId',
+      'status',
+      'reason',
+      'detail',
+      'opportunityCount',
+      'evaluatedOfferCount',
+      'containsSimulatedData',
+    ]),
+    required: Object.freeze([
+      'tripId',
+      'status',
+      'reason',
+      'detail',
+      'opportunityCount',
+      'evaluatedOfferCount',
+      'containsSimulatedData',
+    ]),
+  }),
+});
+
+function invalidMonitoringItem(index, detail) {
+  throw new TypeError(`monitoring_runs.items inválido no índice ${index}: ${detail}`);
+}
+
+function assertItemKeys(item, shape, index) {
+  for (const key of Object.keys(item)) {
+    if (!shape.allowed.includes(key)) {
+      invalidMonitoringItem(index, 'propriedade não prevista.');
+    }
+  }
+
+  for (const key of shape.required) {
+    if (!Object.hasOwn(item, key)) {
+      invalidMonitoringItem(index, `campo obrigatório ausente: ${key}.`);
+    }
+  }
+}
+
+function assertOptionalNonNegativeInteger(item, key, index) {
+  if (!Object.hasOwn(item, key)) return;
+  if (!Number.isInteger(item[key]) || item[key] < 0) {
+    invalidMonitoringItem(index, `${key} precisa ser inteiro não negativo.`);
+  }
+}
+
+function assertOptionalBoolean(item, key, index) {
+  if (!Object.hasOwn(item, key)) return;
+  if (typeof item[key] !== 'boolean') {
+    invalidMonitoringItem(index, `${key} precisa ser booleano.`);
+  }
+}
+
+function validateMonitoringItem(item, index) {
+  if (item === null || typeof item !== 'object' || Array.isArray(item)) {
+    invalidMonitoringItem(index, 'item precisa ser objeto.');
+  }
+
+  const shape = Object.hasOwn(MONITORING_ITEM_SHAPE, item.status)
+    ? MONITORING_ITEM_SHAPE[item.status]
+    : null;
+  if (!shape) {
+    invalidMonitoringItem(index, 'status não reconhecido.');
+  }
+
+  assertItemKeys(item, shape, index);
+
+  if (item.tripId !== null && typeof item.tripId !== 'string') {
+    invalidMonitoringItem(index, 'tripId precisa ser string ou null.');
+  }
+
+  assertOptionalNonNegativeInteger(item, 'opportunityCount', index);
+  assertOptionalNonNegativeInteger(item, 'evaluatedOfferCount', index);
+  assertOptionalBoolean(item, 'containsSimulatedData', index);
+
+  if (item.status === 'OK') {
+    return { ...item };
+  }
+
+  if (item.status === 'FAILED') {
+    if (!['SEARCH', 'OPPORTUNITIES'].includes(item.stage)) {
+      invalidMonitoringItem(index, 'stage não reconhecido.');
+    }
+    if (typeof item.error !== 'string') {
+      invalidMonitoringItem(index, 'error precisa ser string.');
+    }
+    return { ...item };
+  }
+
+  if (!['TRIP_NOT_ACTIVE', 'MALFORMED_TRIP'].includes(item.reason)) {
+    invalidMonitoringItem(index, 'reason não reconhecido.');
+  }
+  if (typeof item.detail !== 'string') {
+    invalidMonitoringItem(index, 'detail precisa ser string.');
+  }
+
+  return { ...item };
+}
+
+/**
+ * Valida e copia os itens JSONB antes de expô-los pela API.
+ *
+ * @param {unknown} items conteúdo persistido em monitoring_runs.items
+ * @returns {Array<object>} itens validados, sem propriedades desconhecidas
+ * @throws {TypeError} conteúdo que não corresponde às variantes do contrato
+ */
+export function validateMonitoringItems(items) {
+  if (!Array.isArray(items)) {
+    throw new TypeError('monitoring_runs.items precisa ser um array.');
+  }
+
+  return items.map(validateMonitoringItem);
+}
+
 function toRunView(run) {
   return {
     runId: run.id,
@@ -103,7 +254,7 @@ function toRunView(run) {
     okCount: run.okCount,
     failedCount: run.failedCount,
     opportunityCount: run.opportunityCount,
-    items: run.items,
+    items: validateMonitoringItems(run.items),
     failureReason: run.failureReason ?? null,
   };
 }

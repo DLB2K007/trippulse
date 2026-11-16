@@ -56,6 +56,16 @@ test('POST /trips cria viagem e devolve 201 com id UUID', async (t) => {
   assert.equal(res.statusCode, 201);
   const trip = res.json();
 
+  assert.deepEqual(Object.keys(trip).sort(), [
+    'createdAt',
+    'destination',
+    'endDate',
+    'id',
+    'name',
+    'origin',
+    'startDate',
+    'updatedAt',
+  ]);
   assert.match(trip.id, /^[0-9a-f-]{36}$/);
   assert.equal(trip.name, 'Teste API');
   assert.equal(trip.startDate, '2027-09-01');

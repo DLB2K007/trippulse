@@ -16,7 +16,7 @@ const requestSchema = {
     type: 'object',
     required: ['tripId'],
     properties: {
-      tripId: { type: 'string' },
+      tripId: { type: 'string', description: 'UUID da viagem.' },
     },
   },
   querystring: {
@@ -31,7 +31,23 @@ const requestSchema = {
 export async function analysisRoutes(app) {
   app.get(
     '/:tripId/analysis',
-    { schema: requestSchema },
+    {
+      schema: {
+        tags: ['Analysis'],
+        operationId: 'getTripAnalysis',
+        summary: 'Analisa os preços de uma viagem',
+        description:
+          'Analisa descritivamente o histórico de cada oferta. Não aceita parâmetros, não consulta provedores e não escreve no banco.',
+        params: requestSchema.params,
+        querystring: requestSchema.querystring,
+        response: {
+          200: { $ref: 'AnalysisEnvelope#' },
+          400: { $ref: 'ErrorResponse#' },
+          404: { $ref: 'ErrorResponse#' },
+          500: { $ref: 'ErrorResponse#' },
+        },
+      },
+    },
     async (request) => {
       return analysisService.analyzeTripPrices(request.params.tripId);
     }

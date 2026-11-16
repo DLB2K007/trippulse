@@ -8,20 +8,25 @@
     "start": "node --env-file=.env apps/api/src/server.js",
     "dev": "node --env-file=.env --watch apps/api/src/server.js",
     "start:no-env": "node apps/api/src/server.js",
-  "db:migrate": "prisma migrate dev && prisma generate",
-  "db:deploy": "prisma migrate deploy",
-  "postinstall": "prisma generate",
-  "test": "node --env-file=.env --test --test-force-exit --test-concurrency=1"
+    "db:migrate": "prisma migrate dev && prisma generate",
+    "db:deploy": "prisma migrate deploy",
+    "postinstall": "prisma generate",
+    "test": "node --env-file=.env --test --test-force-exit --test-concurrency=1"
   },
   "engines": {
     "node": ">=20.6.0"
   },
   "license": "ISC",
   "dependencies": {
+    "@fastify/swagger": "9.9.4",
+    "@fastify/swagger-ui": "5.2.6",
     "@prisma/adapter-pg": "^7.10.1",
     "@prisma/client": "^7.10.1",
     "dotenv": "^18.0.9",
     "fastify": "^5.12.8",
     "prisma": "^7.10.1"
+  },
+  "devDependencies": {
+    "@readme/openapi-parser": "10.0.0"
   }
 }

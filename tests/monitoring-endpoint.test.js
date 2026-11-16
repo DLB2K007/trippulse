@@ -195,6 +195,33 @@ test('GET /monitoring/runs retorna histórico REAL em ordem decrescente e respei
   assert.equal(two[1].runId, created[1].id);
 });
 
+test('GET /monitoring/runs rejeita item JSONB com propriedade desconhecida', async (t) => {
+  const run = await prisma.monitoringRun.create({
+    data: {
+      status: 'COMPLETED',
+      trigger: 'MANUAL',
+      startedAt: new Date('2027-05-02T00:00:00.000Z'),
+      finishedAt: new Date('2027-05-02T00:00:01.000Z'),
+      durationMs: 1000,
+      tripCount: 1,
+      monitorableCount: 1,
+      skippedCount: 0,
+      okCount: 1,
+      failedCount: 0,
+      opportunityCount: 0,
+      items: [{ tripId: 'item-invalido', status: 'OK', campoInterno: 'não pode sair' }],
+    },
+  });
+
+  t.after(async () => {
+    await prisma.monitoringRun.delete({ where: { id: run.id } });
+  });
+
+  const res = await app.inject({ method: 'GET', url: '/monitoring/runs' });
+  assert.equal(res.statusCode, 500);
+  assert.doesNotMatch(res.body, /campoInterno|não pode sair/);
+});
+
 test('GET /monitoring/runs valida limit (400 fora de 1–100)', async () => {
   const tooSmall = await app.inject({ method: 'GET', url: '/monitoring/runs?limit=0' });
   const tooBig = await app.inject({ method: 'GET', url: '/monitoring/runs?limit=101' });

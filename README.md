@@ -22,6 +22,7 @@ Projeto em construção da **fundação backend** (primeira etapa). Atualmente e
 - **Agendador automático do monitoramento** (Dias 11.4–11.5): executa o ciclo com `trigger: SCHEDULED` em intervalo configurável, **desativado por padrão**, com encerramento gracioso (timeout configurável), heartbeat e recuperação automática de execuções órfãs.
 - **Origem, imutabilidade de rota e serialização transacional** (Dia 11.6): viagens com origem canônica obrigatória em novos cadastros, campos de rota/período congelados após a primeira oferta e persistência de ofertas atômica (ofertas e observações commitam juntas), serializada por `SELECT ... FOR UPDATE` na linha da viagem.
 - **Histórico determinístico** (Dia 11.9): cada observação recebe uma `sequence` BIGINT global interna; a ordem canônica é `observedAt ASC, sequence ASC`, e `base`/`taxes` agora são opcionais (ausência vira `NULL`, nunca zero). A `sequence` não é exposta na API.
+- **Contrato OpenAPI 3.1 + Swagger UI** (Fase 4): documento gerado dinamicamente a partir dos schemas Fastify, com as 12 operações, respostas/erros reais e exemplos; **response schemas fechados por padrão**, UI local em `/documentation` e JSON em `/documentation/json`, controlados por `API_DOCS_ENABLED` (padrão `false`).
 
 [![CI](https://github.com/DLB2K007/trippulse/actions/workflows/ci.yml/badge.svg)](https://github.com/DLB2K007/trippulse/actions/workflows/ci.yml)
 
@@ -31,6 +32,7 @@ Funcionalidades futuras (exposição de provedores reais aos usuários, agente d
 
 - JavaScript com ES Modules (Node.js >= 20.6)
 - Fastify
+- OpenAPI 3.1 (`@fastify/swagger` 9 + `@fastify/swagger-ui` 5)
 - PostgreSQL (Docker) + Prisma ORM 7
 - Git e GitHub
 
@@ -41,7 +43,7 @@ npm test    # exige DATABASE_URL (aplicação) e TEST_DATABASE_URL (banco de tes
 ```
 
 - Executor: `node --test` nativo (sem dependências de teste), chamadas pela Fastify `app.inject()` — não abre porta.
-- Cobertura atual: validação e regras do CRUD (**origem canônica, imutabilidade de rota/período após ofertas e serialização pesquisa × PUT com provedor estacionado — Dia 11.6**); normalização para o padrão canônico e a barreira anti-`REAL`; identidade/`externalKey` da oferta; snapshot do histórico (`FIRST_OBSERVATION` → `UNCHANGED`) e `best`, **atomicidade do snapshot**; cascade de exclusão; regressão da validade das datas do provedor simulado e **determinismo da rota (origem derivada do texto)**; métricas puras de preço (limiares, mediana sem o preço atual, arredondamento, limites numéricos); endpoint de análise (`404`/`400`, viagem sem ofertas, classificações, dados simulados, repetibilidade); políticas de oportunidade (portões, motivos de exclusão, piso absoluto, recência, ranking por moeda, determinismo) e seu endpoint; agendador (timer único, after-complete, stop/start, `idle()`, 409 como skip, falha de logger); recuperação de `RUNNING` órfão por heartbeat, proteção de posse, renovação do heartbeat em ciclo real e timeout de shutdown; bootstrap (wiring só após `listen()`, shutdown idempotente, falhas de listen × pós-listen); parsing/isolamento das variáveis de ambiente; **pós-auditoria do Dia 11.8**: parser CSV estrito com linha nos erros e linha correta do cabeçalho após linhas vazias (D2), `flight_number` obrigatório e normalizado no mapeador SerpApi (D1), bloqueio fail-closed de provider REAL **antes** da chamada externa (D6), defesa fail-closed D5 em `persistOfferSnapshot`, round-trip com `return_date`/resposta mista/dedup de tokens/aborto total na 2ª requisição (D4) e registro de provedores memoizado e hermético nos testes (D7); **Dia 11.9:** migration com backfill determinístico, ordem canônica `observedAt`/`sequence`, `current`/`previous`/`best`, `base`/`taxes` nulos, ausência de BigInt na serialização e atomicidade da migration; **fechamento do Dia 11.9:** concorrência HTTP determinística com disputa real pelo lock da viagem (observação de `pg_locks`), atomicidade de **dados** e schema no rollback e isolamento do teste da migration por `TEST_DATABASE_URL`. **D3:** contrato completo da 1ª e da 2ª requisição do round-trip (preservação dos parâmetros + `type=1` + `departure_token`, ausência de `booking_token` e de duplicação de `api_key`), erros HTTP 200 com `error`/status (`Success`/`Processing`/`Queued`/`Error`/desconhecido), `search_metadata` ausente, mercado vazio sem erro e moeda efetiva (BRL normalizado, divergência de BRL falha, ausência com fallback documentado).
+- Cobertura atual: validação e regras do CRUD (**origem canônica, imutabilidade de rota/período após ofertas e serialização pesquisa × PUT com provedor estacionado — Dia 11.6**); normalização para o padrão canônico e a barreira anti-`REAL`; identidade/`externalKey` da oferta; snapshot do histórico (`FIRST_OBSERVATION` → `UNCHANGED`) e `best`, **atomicidade do snapshot**; cascade de exclusão; regressão da validade das datas do provedor simulado e **determinismo da rota (origem derivada do texto)**; métricas puras de preço (limiares, mediana sem o preço atual, arredondamento, limites numéricos); endpoint de análise (`404`/`400`, viagem sem ofertas, classificações, dados simulados, repetibilidade); políticas de oportunidade (portões, motivos de exclusão, piso absoluto, recência, ranking por moeda, determinismo) e seu endpoint; agendador (timer único, after-complete, stop/start, `idle()`, 409 como skip, falha de logger); recuperação de `RUNNING` órfão por heartbeat, proteção de posse, renovação do heartbeat em ciclo real e timeout de shutdown; bootstrap (wiring só após `listen()`, shutdown idempotente, falhas de listen × pós-listen); parsing/isolamento das variáveis de ambiente; **pós-auditoria do Dia 11.8**: parser CSV estrito com linha nos erros e linha correta do cabeçalho após linhas vazias (D2), `flight_number` obrigatório e normalizado no mapeador SerpApi (D1), bloqueio fail-closed de provider REAL **antes** da chamada externa (D6), defesa fail-closed D5 em `persistOfferSnapshot`, round-trip com `return_date`/resposta mista/dedup de tokens/aborto total na 2ª requisição (D4) e registro de provedores memoizado e hermético nos testes (D7); **Dia 11.9:** migration com backfill determinístico, ordem canônica `observedAt`/`sequence`, `current`/`previous`/`best`, `base`/`taxes` nulos, ausência de BigInt na serialização e atomicidade da migration; **fechamento do Dia 11.9:** concorrência HTTP determinística com disputa real pelo lock da viagem (observação de `pg_locks`), atomicidade de **dados** e schema no rollback e isolamento do teste da migration por `TEST_DATABASE_URL`. **D3:** contrato completo da 1ª e da 2ª requisição do round-trip (preservação dos parâmetros + `type=1` + `departure_token`, ausência de `booking_token` e de duplicação de `api_key`), erros HTTP 200 com `error`/status (`Success`/`Processing`/`Queued`/`Error`/desconhecido), `search_metadata` ausente, mercado vazio sem erro e moeda efetiva (BRL normalizado, divergência de BRL falha, ausência com fallback documentado). **Fase 4:** OpenAPI 3.1 válido, 12 operações canônicas, `operationId` único, tags/summaries, componentes nomeados, respostas/exemplos/erros, refs resolvíveis, ausência de segredos/hosts e gate `API_DOCS_ENABLED` com `/documentation` 200/404.
 
 ### Teste da migration: banco descartável obrigatório
 
@@ -88,7 +90,7 @@ A API ainda não é publicada em nenhum ambiente. Antes disso:
 2. **Configuração de produção**: `DATABASE_URL` apontando para um PostgreSQL gerenciado, `NODE_ENV=production`, `HOST`/`PORT` definidos pelo ambiente e segredos fora do repositório.
 3. **Migrations no deploy**: executar `npm run db:deploy` como etapa de release (nunca `migrate dev`), com backup antes de mudanças destrutivas.
 4. **Operação**: healthcheck em `/health`, logs, TLS no proxy de entrada, e CORS/rate limit — hoje ausentes (ver pendências no relatório de continuidade).
-5. **Contrato público**: publicar OpenAPI/Swagger antes de expor a API a terceiros.
+5. **Contrato público**: a documentação OpenAPI/Swagger já está implementada e desabilitada por padrão; antes de expor a API a terceiros, habilitar `API_DOCS_ENABLED=true` de forma consciente, revisar a CSP e confirmar que o ambiente não publica hosts/segredos.
 
 ## Estrutura
 
@@ -108,7 +110,8 @@ trippulse/
 │           ├── integrations/# Provedores externos
 │           │   └── flight-providers/  # registro + provedor simulado + normalização
 │           ├── shared/      # Código compartilhado
-│           ├── app.js       # Montagem da aplicação e rotas
+│           ├── openapi/     # Componentes JSON Schema compartilhados
+│           ├── app.js       # Montagem da aplicação, rotas e Swagger condicional
 │           └── server.js    # Bootstrap: listen + wiring do agendador + shutdown gracioso
 ├── docs/                    # Documentação do projeto
 ├── prisma/
@@ -171,6 +174,23 @@ trippulse/
    ```
 
 ## Endpoints
+
+### Documentação interativa (OpenAPI)
+
+A documentação é **desabilitada por padrão**. Para habilitá-la no `.env` local:
+
+```bash
+API_DOCS_ENABLED=true
+```
+
+Apenas `true` ou `1` (sem diferenciar maiúsculas, com espaços nas bordas) habilitam; qualquer outro valor desativa e, se não for um desligamento reconhecido (`false`, `0`, `off`, `no`, vazio), emite `warn`. Com a flag ativa:
+
+- `GET /documentation` — Swagger UI com assets locais (sem CDN) e CSP estática.
+- `GET /documentation/json` — documento OpenAPI 3.1.0.
+
+Com a flag ausente ou desativada, ambos respondem `404` e os plugins não são registrados. Não há autenticação nesta fase: habilitar a documentação em ambiente público é uma decisão operacional explícita e não protege a API.
+
+Os response schemas são fechados (`additionalProperties: false`): campos novos só aparecem no contrato depois de declarados. As únicas permissividades dinâmicas são `CurrencyFloors` (mapa moeda → inteiro) e `ValidationIssue.params` (parâmetros variáveis do Ajv). `RelatedQuery.priceInsights` declara somente os quatro campos conhecidos do metadado e não repassa o restante. `monitoring_runs.items` é validado na leitura contra as três variantes fechadas (`OK`, `FAILED`, `SKIPPED`). A CSP da UI usa apenas assets locais e o validador externo do Swagger UI está desabilitado.
 
 ### Saúde da API
 

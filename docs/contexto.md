@@ -180,3 +180,48 @@ Comece exclusivamente pela primeira etapa: preparação do ambiente e estrutura 
 Não implemente funcionalidades futuras.
 
 Primeiro, analise os requisitos e apresente um plano de implementação. Depois, desenvolva cada parte de maneira incremental, explicando as decisões técnicas e fornecendo instruções para testar cada entrega.
+
+## 11. Roadmap de evolução
+
+| Fase | Entrega | Estado |
+|---|---|---|
+| 1 | Fundação: Fastify, ambiente, PostgreSQL/Prisma, `/health`, README | ✅ Concluída |
+| 2 | CRUD de viagens e testes automatizados | ✅ Concluída |
+| 3 | Ofertas, histórico, análise, oportunidades e monitoramento | ✅ Concluída e publicada |
+| 4 | **OpenAPI 3.1 + Swagger UI** | ✅ Concluída e corrigida em 16/11/2026 (worktree; sem commit) |
+| 5 | Liberação do provider `REAL` (decisão explícita, validação e requisitos comerciais/legais) | ⏳ Pendente |
+| 6 | Publicação da API (empacotamento, ambiente, TLS, CORS, rate limit) | ⏳ Pendente |
+
+### Fase 4 — OpenAPI 3.1 / Swagger (implementação)
+
+**Status:** implementada e corrigida no working tree em 16/11/2026, sem alteração de regras de negócio, schema Prisma, migrations, `normalize.js`, barreira `REAL` ou D5/D6/D7. Nada foi staged/commitado/pushado.
+
+**Objetivo:** formalizar o contrato HTTP realmente implementado e oferecer documentação interativa da API, sem criar uma segunda fonte de verdade.
+
+**Escopo:**
+
+- Documento OpenAPI **3.1.0** gerado dinamicamente a partir dos schemas e metadados das rotas Fastify.
+- Cobertura dos **12 endpoints** atuais: `/health`; CRUD `/trips`; `/trips/:tripId/flights`; `/trips/:tripId/offers/history`; `/trips/:tripId/analysis`; `/trips/:tripId/opportunities`; `POST` e `GET` `/monitoring/runs`.
+- Schemas compartilhados de request, response e erro; códigos HTTP e exemplos coerentes com os testes/fixtures reais.
+- Swagger UI servida pelo próprio processo, com assets locais e rota `/documentation`; documento em `/documentation/json`.
+- Rota controlada por `API_DOCS_ENABLED` (boolean estrito, padrão **`false`**), sem exposição pública por padrão em produção.
+- Testes de validade do documento, cobertura de paths/operações e comportamento da rota habilitada/desabilitada.
+
+**Estratégia:** `@fastify/swagger@9.9.4` + `@fastify/swagger-ui@5.2.6` (linhas compatíveis com Fastify 5; a UI 6.x ainda não está na tabela oficial para Fastify 5). Validação do documento com `@readme/openapi-parser` como dependência de desenvolvimento. Response schemas serão a fonte única do contrato e também o serializer do Fastify, portanto devem cobrir todos os campos reais; a suíte existente deve continuar verde. Não haverá autenticação simulada, migration, alteração de regra de negócio ou liberação de `REAL`.
+
+**Critérios de conclusão:** documento 3.1 válido com os 12 endpoints; requests, responses e erros cobrindo o comportamento real; `/documentation` habilitada/desabilitada conforme ambiente; nenhum segredo ou host interno exposto; teste de contrato verde no CI; README e relatório atualizados somente após a implementação.
+
+**Fora do escopo:** autenticação/autorização, versionamento de API, SDK/geração de clientes, CORS, rate limit, TLS, deploy, novas rotas, migrations e liberação do provider `REAL`.
+
+**Implementação entregue:**
+
+- Dependências `@fastify/swagger@9.9.4`, `@fastify/swagger-ui@5.2.6` e `@readme/openapi-parser@10.0.0` (dev), com versões explícitas e `package-lock.json` atualizado.
+- `apps/api/src/openapi/schemas.js` com componentes compartilhados (`Trip`, `FlightSearchEnvelope`, `OfferHistoryEnvelope`, `AnalysisEnvelope`, `OpportunitiesEnvelope`, `MonitoringRun`, `ErrorResponse`, `ValidationIssue`, entre outros) usados também como serializers Fastify. Os schemas são fechados (`additionalProperties: false`), exceto os mapas dinâmicos explicitamente justificados (`CurrencyFloors` e `ValidationIssue.params`).
+- `buildApp({ docsEnabled = false })`, registro condicional de Swagger/UI, 12 operações com `operationId` único, tags, summaries, descriptions, parâmetros, request/response schemas, códigos HTTP reais, descrições e exemplos.
+- `API_DOCS_ENABLED` estrito em `config/env.js` (ausente/`false` = desligado; `true`/`1` = ligado; valor desconhecido desliga com `warn`), repassado por `server.js`.
+- `/documentation` (HTML, assets locais e `staticCSP`) e `/documentation/json` quando habilitados; `404` quando desabilitados.
+- `tests/openapi.test.js` cobre validade 3.1, 12 operações, IDs únicos, tags/summaries/descrições/exemplos, componentes/refs, erros reais, ausência de segredos/hosts, gate habilitado/desabilitado e parsing estrito da flag.
+
+**Correção pós-auditoria independente (A1–A4):** o helper `object()` passou a gerar schemas fechados; `MonitoringItem` foi dividido nas variantes `OK`, `FAILED` e `SKIPPED`, com validação do JSONB na leitura; `RelatedQuery.priceInsights` declara apenas `lowest_price`, `price_level`, `typical_price_range` e `price_history`; `ErrorResponse.validation` usa `ValidationIssue` com os campos do Ajv; o componente duplicado `ValidationError` foi removido; a CSP foi restringida a assets locais e o validador externo desabilitado; o JSDoc de `buildApp` voltou para a função correta. A suíte completa passou **336/336** e `tests/openapi.test.js` **12/12**.
+
+O detalhamento operacional, riscos, decisões e a correção estão no **§14 de `docs/relatorio-continuidade.md`** (§14.13 implementação; §14.14 correção pós-auditoria). A implementação está no working tree; commit/push dependem de autorização específica.

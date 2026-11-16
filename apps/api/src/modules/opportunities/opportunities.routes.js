@@ -13,7 +13,7 @@ const requestSchema = {
     type: 'object',
     required: ['tripId'],
     properties: {
-      tripId: { type: 'string' },
+      tripId: { type: 'string', description: 'UUID da viagem.' },
     },
   },
   querystring: {
@@ -29,7 +29,23 @@ const requestSchema = {
 export async function opportunitiesRoutes(app) {
   app.get(
     '/:tripId/opportunities',
-    { schema: requestSchema },
+    {
+      schema: {
+        tags: ['Opportunities'],
+        operationId: 'getTripOpportunities',
+        summary: 'Lista oportunidades de compra de uma viagem',
+        description:
+          'Aplica a política determinística sobre a análise existente, com exclusões motivadas, ranking por moeda e diferença histórica observada. Não é recomendação de compra.',
+        params: requestSchema.params,
+        querystring: requestSchema.querystring,
+        response: {
+          200: { $ref: 'OpportunitiesEnvelope#' },
+          400: { $ref: 'ErrorResponse#' },
+          404: { $ref: 'ErrorResponse#' },
+          500: { $ref: 'ErrorResponse#' },
+        },
+      },
+    },
     async (request) => {
       return opportunitiesService.listTripOpportunities(request.params.tripId);
     }

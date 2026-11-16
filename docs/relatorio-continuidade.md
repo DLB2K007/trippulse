@@ -1,7 +1,7 @@
 # Relatório de continuidade — TripPulse
 
-> Atualizado em 2026-11-13. Cobre os **Dias 1 a 11.9** e o **D3**: o **Dia 11.3 está publicado em `46acf4a`**, o **Dia 11.4 em `83eb1ec`**, o **Dia 11.5 em `e4109eb`**, o **Dia 11.6 em `fab9eac`**, o **Dia 11.8 em `c55238c`** e o **Dia 11.9 em `72864543a36babdf2522af32558b524e2b2447a7`**; `main == origin/main == 7286454`. O **D3 está implementado no working tree, ainda sem commit** (nada staged).
-> O CI validou o Dia 9 em `fdfb7a7` (run `42520790068`, verde); os Dias 11.1/11.2/11.3 estão publicados em `origin/main` (11.3 em `46acf4a`), o 11.4 também foi publicado (`83eb1ec`), o 11.5 foi publicado com CI success (`e4109eb`), o 11.6 foi publicado (`fab9eac`), o 11.8 foi publicado com CI success (run `43106273261`) e o 11.9 foi publicado com CI success (run `43460301273`).
+> Atualizado em 2026-11-16. Cobre os **Dias 1 a 11.9** e o **D3**: o **Dia 11.3 está publicado em `46acf4a`**, o **Dia 11.4 em `83eb1ec`**, o **Dia 11.5 em `e4109eb`**, o **Dia 11.6 em `fab9eac`**, o **Dia 11.8 em `c55238c`**, o **Dia 11.9 em `72864543a36babdf2522af32558b524e2b2447a7`** e o **D3 em `6abba27d15f6500f8d3aa12b0f7479b6d3161137`**; `main == origin/main == 6abba27` e a árvore de trabalho estava limpa na auditoria pós-push.
+> O CI validou o Dia 9 em `fdfb7a7` (run `42520790068`, verde); os Dias 11.1/11.2/11.3 estão publicados em `origin/main` (11.3 em `46acf4a`), o 11.4 também foi publicado (`83eb1ec`), o 11.5 foi publicado com CI success (`e4109eb`), o 11.6 foi publicado (`fab9eac`), o 11.8 foi publicado com CI success (run `43106273261`), o 11.9 foi publicado com CI success (run `43460301273`) e o D3 foi validado pelo CI success (run `43788295629`). A **Fase 4 (OpenAPI 3.1 + Swagger UI) foi implementada no working tree em 16/11/2026** (§14.13) e corrigida após auditoria independente (§14.14), sem commit/push; o planejamento original permanece preservado no §14.
 > Em 2026-11-08 o histórico foi reescrito para corrigir a autoria: todos os 14 commits agora são `DLB2K007 <danielbordini027@gmail.com>`. Os hashes citados neste relatório já são os novos; os antigos não existem mais na `main`.
 > Documento de contexto oficial do projeto: **`docs/contexto.md`** (o usuário pode referir-se a ele por outros nomes, como "PROJECT_CONTEXT.md" — é sempre este arquivo).
 > Versões anteriores deste relatório cobrem o estado até o Dia 5 (commit `9605f03`).
@@ -90,7 +90,8 @@ Ao longo de 11 dias incrementais, o TripPulse saiu de documento vazio para um **
 | Monitoramento — recuperação de `RUNNING` órfão + timeout de shutdown | ✅ Implementado e testado (Dia 11.5, `e4109eb`) |
 | Origem da viagem + imutabilidade de rota/período + serialização transacional | ✅ Implementado, testado e publicado (Dia 11.6, `fab9eac`) |
 | Histórico de preços determinístico + decomposição opcional | ✅ Implementado, testado e publicado (Dia 11.9, `7286454`) |
-| Integração **real** com provedores | ⚠️ **Adaptador experimental implementado; integração externa não validada e REAL bloqueado** (flag+chave apenas registram o adaptador; barreira fail-closed impede exposição/persistência REAL; D3 implementado localmente, validação manual e credenciais autorizadas pendentes) |
+| Integração **real** com provedores | ⚠️ **Adaptador experimental implementado; integração externa não validada e REAL bloqueado** (flag+chave apenas registram o adaptador; barreira fail-closed impede exposição/persistência REAL; D3 publicado em `6abba27`; validação manual e credenciais autorizadas ainda pendentes) |
+| Contrato OpenAPI 3.1 + Swagger UI | ✅ **Implementado e corrigido no working tree (Fase 4, 16/11/2026)**; response schemas fechados, Swagger UI + JSON condicionados por `API_DOCS_ENABLED`; 12 operações documentadas (§14.13 e §14.14) |
 | Agente de IA / recomendações | ❌ Não iniciado |
 | Notificações, hotéis, veículos, atividades; publicação | ❌ Não iniciado |
 
@@ -262,7 +263,7 @@ monitoring_runs (MonitoringRun)  — sem FK: registro operacional, independente 
 | 11.6 (`fab9eac`) | `prisma/schema.prisma` (+`origin String?`), migration `20261111011707_add_trip_origin` (nova), `shared/trip-lock.js` (novo — `SELECT ... FOR UPDATE` na linha de trips), `modules/trips/trips.service.js` (create exige origem; `updateTrip` transacional com lock + política de imutabilidade), `modules/trips/trips.routes.js` (schemas POST/PUT separados), `modules/flights/flights.service.js` (gate 409 sem origem; transação pós-provedor com lock/comparação/snapshot), `modules/offers/offers.service.js` (`persistOfferSnapshot(tripId, offers, tx = prisma)`), `simulated-flight-provider.js` (rota determinística, `ORIGIN_HUBS` removido), `integrations/flight-providers/index.js` (contrato), `tests/{api,simulated-provider,offers-service,offers-history,monitoring-endpoint}.test.js` (+13 líquidos), README e este relatório. **Sem dependência nova.** |
 | 11.8 (`c55238c`, publicado) | **Resolver de aeroportos**: `integrations/airports/{build-airport-snapshot.mjs,csv.js,airport-resolver.js,data/airports-snapshot.json}` (novos — snapshot OurAirports local, 4.008 aeroportos, sem rede em runtime; parser RFC-4180 próprio). **Adaptador experimental**: `integrations/flight-providers/serpapi/serpapi-flight-provider.js` (novo — fetch injetável, round-trip via `departure_token`, `return_date` na primeira requisição, expansão limitada 1–10). **Config**: `config/env.js` (+`SERPAPI_ENABLED`/`SERPAPI_API_KEY`/`SERPAPI_MAX_OUTBOUND_EXPANSIONS`, padrões D2/D4), `.env.example`. **Registro**: `integrations/flight-providers/index.js` (`buildFlightProviders` condicional por flag+chave; `configureFlightProviders`/`resetFlightProviders`). **Barreira**: `shared/real-barrier.js` (fail-closed compartilhada), `normalize.js` (validação booleana estrita) e `flights.service.js` (gate pré-provider + pós-normalização), `offers.service.js` (D5 fail-closed). **Testes**: `tests/{airport-resolver,serpapi-provider,flight-providers-registry,real-barrier,real-barrier-policy}.test.js` (novos) + `tests/{normalize,env}.test.js` (estendidos) + `tests/csv.test.js` (novo) + `tests/fixtures/serpapi-fixtures.js` (sintéticas, rotuladas). README + este relatório. **Sem migration, sem dependência nova, zero chamadas reais.** |
 | 11.9 (`7286454`, publicado) | `prisma/schema.prisma` (`sequence BigInt @unique @default(autoincrement())`, `base Float?`, `taxes Float?`, índice composto), migration `20261112000000_add_price_history_sequence_and_optional_breakdown` (transação explícita, backfill `ROW_NUMBER`, `setval`, `OWNED BY`, unique index, troca de índice), `offers.service.js` (current canônico pós-escrita, `previous` com OR lexicográfico, `best` com desempate, projeções sem sequence), `price-metrics.js` (comentários da ordem canônica), `tests/{offers-service,offers-history,analysis-endpoint}.test.js` (regressões) e `tests/price-history-migration.test.js` (novo, 3 cenários). README e este relatório. **Sem dependência nova; sem liberar REAL.** |
-| D3 (working tree, sem commit) | `serpapi-flight-provider.js` (2ª requisição = todos os parâmetros da 1ª + `type=1` explícito + `departure_token`; validação de `error`/`search_metadata.status` antes da extração; moeda efetiva em `search_parameters.currency` com falha para divergência de BRL; erros externos não propagados, com mensagens controladas e sanitização exata de `api_key`/`departure_token` literal e codificado; **token usado somente durante a expansão e removido dos raw offers por cópia, sem mutar as respostas originais**), `tests/fixtures/serpapi-fixtures.js` (status `Success`, `error`, moeda configurável), `tests/serpapi-provider.test.js` (+16 testes: 15 históricos do D3 + 1 do ajuste de remoção do token — contrato das duas requisições, erros 200/status (incluindo `Error` na 2ª requisição), `search_metadata` ausente, mercado vazio sem erro, token literal/codificado com e sem prefixo, `token=`, exceção de rede, sanitização, moeda e ausência do token no raw/normalizado), README e este relatório. **Sem migration, sem dependência nova, zero chamadas reais.** |
+| D3 (`6abba27`, publicado) | `serpapi-flight-provider.js` (2ª requisição = todos os parâmetros da 1ª + `type=1` explícito + `departure_token`; validação de `error`/`search_metadata.status` antes da extração; moeda efetiva em `search_parameters.currency` com falha para divergência de BRL; erros externos não propagados, com mensagens controladas e sanitização exata de `api_key`/`departure_token` literal e codificado; **token usado somente durante a expansão e removido dos raw offers por cópia, sem mutar as respostas originais**), `tests/fixtures/serpapi-fixtures.js` (status `Success`, `error`, moeda configurável), `tests/serpapi-provider.test.js` (+16 testes: 15 históricos do D3 + 1 do ajuste de remoção do token — contrato das duas requisições, erros 200/status (incluindo `Error` na 2ª requisição), `search_metadata` ausente, mercado vazio sem erro, token literal/codificado com e sem prefixo, `token=`, exceção de rede, sanitização, moeda e ausência do token no raw/normalizado), README e este relatório. **Sem migration, sem dependência nova, zero chamadas reais.** |
 
 **Scripts npm atuais**: `start` · `dev` (`--watch`) · `start:no-env` · `db:migrate` (`migrate dev && generate`) · `db:deploy` (= `prisma migrate deploy`, também usado no CI) · `postinstall` (`prisma generate`) · `test` (`node --env-file=.env --test --test-force-exit --test-concurrency=1` — arquivos sequenciais porque todos compartilham o mesmo PostgreSQL).
 
@@ -275,6 +276,8 @@ monitoring_runs (MonitoringRun)  — sem FK: registro operacional, independente 
 **Sequência posterior (11/11/2026)**: as 81 declarações pendentes — e a suíte inteira — foram executadas em um PostgreSQL 17 descartável e isolado, com **289/289 em duas rodadas completas** (0 falhas, 0 skipped, 0 cancelados, exit 0) após as 5 migrations; o ambiente foi removido em seguida. O registro completo está em **§11.6**. Nenhuma dessas execuções foi reproduzida pela auditoria final, que não repetiu a suíte porque o container temporário já havia sido removido; os números são os **efetivamente executados e reportados na etapa de validação**.
 
 **Dia 11.9 (12/11/2026)**: a implementação original passou a ter **295/295 em 23 arquivos**, em **duas rodadas completas** no **PostgreSQL 18** descartável e isolado (`127.0.0.1:5544`) — execução da implementação original, **não** é validação em 17.11 —, com 0 falhas, 0 skipped e 0 cancelados. As 5 migrations antigas foram aplicadas primeiro no banco populado, o seed sintético foi inserido e a sexta migration foi aplicada pelo runner real; o banco vazio recebeu as 6 migrations pelo `prisma migrate deploy`. Após as correções pós-auditoria, a suíte passou a **298/298 em duas rodadas**, revalidada em **PostgreSQL 17.11** descartável (`127.0.0.1:5546`); o fechamento documental e as validações finais estão em **§12**.
+
+**Fase 4 (16/11/2026)**: **332/332 execuções passando** na suíte completa (`node --test --test-force-exit --test-concurrency=1`), 0 falhas, 0 skipped, 0 cancelados, exit 0, com PostgreSQL da aplicação em `localhost:5433` e PostgreSQL descartável para a migration em `127.0.0.1:5544`. O recorte HTTP de contrato existente passou **52/52** e o novo `tests/openapi.test.js` passou **9/9**. O documento OpenAPI 3.1 foi validado com `@readme/openapi-parser@10.0.0`. **Após a correção pós-auditoria (§14.14), a suíte passou 336/336 e `tests/openapi.test.js` 12/12.**
 
 **Fechamento do Dia 11.9 (13/11/2026)**: **306 declarações em 24 arquivos** (8 novas do resolvedor de `TEST_DATABASE_URL`), **307 execuções/307 em duas rodadas completas** em **PostgreSQL 17.11** descartável (`127.0.0.1:5544`, `tmpfs`, sem volume), exit 0. O runner conta 307 porque `tests/helpers/test-database-url.js` também é descoberto como arquivo sem declarações de teste; a soma por arquivo é 306. Registro completo, incluindo o experimento negativo do teste de concorrência, em **§12.1**.
 
@@ -303,6 +306,7 @@ monitoring_runs (MonitoringRun)  — sem FK: registro operacional, independente 
 | `tests/real-barrier-policy.test.js` | 8 | **Terceira/quarta auditoria (puro, client falso)**: D6 exige provider objeto com `name` não vazio, `search` função e `isSimulated === true`; cobre provider malformado, array, lista vazia, lista mista, contadores de `trip.findUnique`/counts/transação/search e caso positivo SIMULATED executando `provider.search()` exatamente uma vez; D5 cobre REAL, UNCLASSIFIED, classificação ausente, flags nulas/numéricas/string, elementos nulos/array, lista vazia sem escrita e entrada não-array; fluxo SIMULATED válido continua persistindo |
 | `tests/price-history-migration.test.js` | 3 | **Dia 11.9**: migration em banco vazio (sequence inicia em 1, nullable, índices), em banco populado (backfill determinístico por `offer_id`/`observed_at`/`id`, unicidade, preservação de linhas, próxima inserção acima do máximo) e atomicidade (falha antes do `COMMIT` desfaz coluna, backfill, nulabilidade e índices). **Pós-auditoria:** verifica `OWNED BY` via `pg_get_serial_sequence`, default `nextval` e remoção da sequência criada no rollback. **Fechamento do Dia 11.9:** conexão exclusiva por `TEST_DATABASE_URL` (resolvida antes de qualquer `new Client`), e atomicidade de **dados** — quantidade, IDs, `total`, `base` e `taxes` idênticos após a falha, sem inserção/remoção parcial |
 | `tests/test-database-url.test.js` | 8 | **Fechamento do Dia 11.9 (puro, sem banco)**: `TEST_DATABASE_URL` ausente/vazia falha antes de conectar; URL malformada rejeitada sem ecoar o valor; protocolo inválido; banco sem nome; destino sem `test` no nome (banco de desenvolvimento); URL equivalente à `DATABASE_URL` rejeitada mesmo com nome de teste e sem vazar credenciais; destino explícito aceito |
+| `tests/openapi.test.js` | 12 | **Fase 4 + correção A1–A4**: OpenAPI 3.1 válido (`@readme/openapi-parser`); exatamente as 12 operações canônicas com `operationId` único, tags, summaries e descriptions; respostas JSON com descrição e exemplo; componentes nomeados (`Trip`, `ErrorResponse`, `ValidationIssue`, etc.) e refs resolvíveis; schemas fechados e única permissividade dinâmica em `ValidationIssue.params`; `CurrencyFloors` como mapa; três variantes de `MonitoringItem` e validação das três; `RelatedQuery.priceInsights` fechado nos quatro campos conhecidos; `ValidationError` removido; `ErrorResponse` exige apenas `statusCode`/`error`/`message`; `Trip` preserva `createdAt`/`updatedAt`, `origin` nulo e campos fechados; documento sem `servers`, segredos, hosts ou URLs; `/documentation` e `/documentation/json` 200 com CSP local quando habilitados e 404 por padrão; `API_DOCS_ENABLED` estrito; erro HTTP real serializa sem campos opcionais falsos; erro de validação expõe os cinco campos de `ValidationIssue` |
 | `tests/csv.test.js` | 19 | **Dia 11.8 (pós-auditoria D2)**: parser CSV estrito — vírgulas citadas, aspas escapadas, multilinha, CRLF/LF, BOM, linhas em branco, campos vazios, linha sem newline; falhas com linha no erro: aspa em posição inválida (`ab"cd`), citação nunca fechada, conteúdo após fechamento (`"abc"x`), colunas excedentes/ausentes, linha só de espaços, entrada não-string, malformação no meio do arquivo (nada engolido); **cabeçalho correto após linhas vazias iniciais (`\n\na,b\n1` → cabeçalho linha 3, registro linha 4)**; amostra real do formato OurAirports |
 
 Histórico dos testes manuais (Dias 1–5) está documentado como superseded pela suíte. Falhas encontradas durante o desenvolvimento foram todas corrigidas e viraram regressões quando aplicável.
@@ -410,7 +414,7 @@ Histórico dos testes manuais (Dias 1–5) está documentado como superseded pel
 | 3 | ✅ **Concluída e publicada — Dia 11.6** (origem no Trip + imutabilidade de rota/período + serialização transacional): commit `fab9eac`, `main == origin/main` | 2 |
 | 3.5 | ✅ **Publicado — Dia 11.8 em `c55238c` + segunda auditoria + correções + validação PostgreSQL** (resolver OurAirports + adaptador experimental SerpApi + feature flags + barreira fail-closed D5/D6; correções D1/D2/D4/D5/D6/D7 aplicadas; D3 registrada como validação pré-liberação REAL — seção 11). **289 declarações em 22 arquivos; 208 casos puros executados e passando no recorte canônico; validação PostgreSQL descartável com 289/289 em duas rodadas completas** (§11.6). A auditoria final pré-consolidação emitiu **APROVADO COM RESSALVAS**; a única pendência impeditiva — o registro da validação no relatório — foi fechada nesta atualização documental. **Próximo checkpoint: autorização de commit → autorização de push** (independentes) | 3 |
 | 3.6 | ✅ **Publicado - Dia 11.9 em `7286454`** (sequence determinística + base/taxes opcionais + migration atômica + **306 declarações em 24 arquivos / 307/307 em duas rodadas** após as correções pós-auditoria; o runner reporta 307 porque o helper `tests/helpers/test-database-url.js` é descoberto como arquivo sem declarações de teste - ver §12.1). **D3 implementado no working tree em 13/11/2026** (sem commit; §13). **Próximo checkpoint: auditoria independente do D3 → autorização de commit → push.** | 3.5 |
-| 4 | OpenAPI/Swagger formal | qualquer momento |
+| 4 | ✅ **Fase 4 implementada e corrigida no working tree — OpenAPI 3.1 + Swagger UI** (contrato formal, schemas de resposta/erro fechados, documentação interativa, gate `API_DOCS_ENABLED` e testes de validade; §14.13 e §14.14). Sem commit/push | D3 publicado (`6abba27`) |
 | 5 | Liberação de REAL (decisão explícita: remover barreira 503, confirmar semântica do preço de round-trip com fixtures reais, decidir decomposição base/impostos e política comercial/legal do SerpApi — Legal Shield só em planos Production+) | 3.5 maduro + credenciais de provedor |
 | 6 | Publicação da API (Dockerfile, env de produção, migrations no deploy, TLS/CORS/rate limit) | 2–5 + decisão de plataforma |
 
@@ -615,7 +619,7 @@ Registro das correções pedidas pela verificação de fechamento e das validaç
 
 **Contagem**: 306 declarações `test(...)` em 24 arquivos; o runner reporta **307** porque `tests/helpers/test-database-url.js` (módulo auxiliar sob `tests/`) também é descoberto como arquivo sem declarações de teste (1 execução). O total por arquivo soma 306.
 
-**Estado local após o D3 (working tree, sem commit)**: **322 declarações `test(...)` em 24 arquivos** e **323 resultados no runner** — 306 publicadas em `7286454` + 11 testes do D3 + 2 testes de correção pós-auditoria (status `Error` na 2ª requisição e codificação do `departure_token` especial) + 2 testes de confidencialidade da segunda auditoria (token literal/codificado, sem prefixo, `token=` e exceção de rede) + 1 teste do ajuste de remoção do token dos raw offers. A diferença de 1 entre declarações e resultados continua sendo o helper descoberto como arquivo sem declarações de teste. Esse total local **não está publicado**: o commit `7286454` permanece com 306/307.
+**Estado do D3 publicado em `6abba27`**: **322 declarações `test(...)` em 24 arquivos** e **323 resultados no runner** — 306 publicadas em `7286454` + 11 testes do D3 + 2 testes de correção pós-auditoria (status `Error` na 2ª requisição e codificação do `departure_token` especial) + 2 testes de confidencialidade da segunda auditoria (token literal/codificado, sem prefixo, `token=` e exceção de rede) + 1 teste do ajuste de remoção do token dos raw offers. A diferença de 1 entre declarações e resultados continua sendo o helper descoberto como arquivo sem declarações de teste. Esse total foi publicado no commit `6abba27` e validado pelo CI (run `43788295629`, success); o commit anterior `7286454` permanece com 306/307.
 
 **Ambiente de teste da migration**: `trippulse_test_migration` recebeu as 6 migrations; o teste cria e remove apenas schemas temporários próprios, sem tocar `public`.
 
@@ -627,7 +631,7 @@ Registro das correções pedidas pela verificação de fechamento e das validaç
 
 ## 13. D3 — segunda requisição da SerpApi com `departure_token` (13/11/2026)
 
-**Base publicada**: `72864543a36babdf2522af32558b524e2b2447a7` (Dia 11.9), com `main == origin/main` e CI success (run `43460301273`). O D3 está **implementado localmente, ainda sem commit, push ou staging**; este §13 descreve apenas as alterações locais, que não devem ser confundidas com o commit publicado.
+**Base anterior**: `72864543a36babdf2522af32558b524e2b2447a7` (Dia 11.9), com `main == origin/main` e CI success (run `43460301273`). O D3 foi implementado localmente em 13/11/2026 e **publicado** no commit `6abba27d15f6500f8d3aa12b0f7479b6d3161137` (`feat: complete SerpApi departure token expansion`; CI success, run `43788295629`). Este §13 preserva o registro da implementação e das auditorias, agora parte do commit publicado.
 
 **Contrato da 1ª requisição (round-trip)**: `engine=google_flights`, `hl=pt-BR`, `gl=br`, `currency=BRL`, `travel_class=1`, `type=1`, `departure_id`/`arrival_id` resolvidos localmente (IATA ou `kgmid`, múltiplos por vírgula), `outbound_date` e `return_date` em `YYYY-MM-DD`; `api_key` anexada exclusivamente por `performRequest`. One-way mantém `type=2` e não envia `return_date`.
 
@@ -654,4 +658,262 @@ Registro das correções pedidas pela verificação de fechamento e das validaç
 
 **Limitações**: a validação manual com conta autorizada segue pendente (mínimo estimado de 2 requisições pagas — 1 busca inicial + 1 expansão; recomendado 3, incluindo cenário negativo; cenário GRU→LIS, 2027-03-10/2027-03-20, economia, BRL, expansão default). Permanecem fora do escopo: semântica do preço total do round-trip (preço do retorno usado como total), base/impostos `NULL`, one-way no produto, retries/backoff, resultados parciais, `deep_search`, multi-city e liberação do provider REAL.
 
-**Git**: branch `main`, HEAD/origin `7286454`, working tree com as alterações do D3 e da documentação, **nada staged, nenhum commit/push/amend**. A primeira auditoria independente do D3 concluiu **APROVADO COM RESSALVAS**; a segunda concluiu **NÃO APROVADO** por vazamento de `departure_token` em mensagens de erro. A correção de confidencialidade e os 2 testes adicionais foram aplicados (41/41 focados); o ajuste posterior removeu o token dos raw offers e acrescentou 1 teste (42/42 focados). O D3 **não está aprovado** e aguarda nova auditoria independente.
+**Git e publicação**: branch `main`; HEAD e `origin/main` em `6abba27d15f6500f8d3aa12b0f7479b6d3161137`; árvore limpa na auditoria pós-push; CI run `43788295629` concluído com **success**. A primeira auditoria independente do D3 concluiu **APROVADO COM RESSALVAS**; a segunda concluiu **NÃO APROVADO** por vazamento de `departure_token` em mensagens de erro. A correção de confidencialidade e os 2 testes adicionais foram aplicados (41/41 focados); o ajuste posterior removeu o token dos raw offers e acrescentou 1 teste (42/42 focados). O D3 foi publicado; a validação manual com conta autorizada **permanece pendente** e continua sendo pré-requisito da liberação REAL.
+
+---
+
+## 14. Fase 4 — OpenAPI 3.1 / Swagger UI (planejamento e implementação, 16/11/2026)
+
+> **Planejamento original preservado abaixo; implementação registrada no §14.13.** O plano foi executado sem alterar regras de negócio, schema Prisma, migrations, `normalize.js`, barreira `REAL` ou D5/D6/D7. Nenhuma chamada à SerpApi foi feita e nada foi staged/commitado/pushado. **O provider REAL continua bloqueado.**
+
+### 14.1 Objetivo e escopo
+
+Formalizar o contrato HTTP que já existe e disponibilizar uma interface interativa (Swagger UI) para consulta e execução assistida das operações, sem criar uma segunda fonte de verdade. O contrato deve refletir exatamente o comportamento implementado, incluindo respostas reais, códigos de erro e distinções entre dados `SIMULATED` e `REAL`.
+
+**Dentro do escopo:**
+
+- Documento OpenAPI **3.1.0** gerado dinamicamente a partir dos schemas e metadados das rotas Fastify.
+- Cobertura dos **12 endpoints** hoje montados em `app.js` e dos schemas reutilizáveis de request, response e erro.
+- Swagger UI servida pelo próprio processo, com assets locais do pacote (sem CDN).
+- Rota de documentação controlada por ambiente, desabilitada por padrão em produção.
+- Testes de validade estrutural do documento, de cobertura de paths/operações e de exposição da rota.
+- Atualização do README apenas na etapa de implementação, quando houver comportamento novo para documentar.
+
+**Fora do escopo:** autenticação/autorização (não existe hoje), versionamento de API, SDKs, geração de clientes, gateway, rate limit, CORS, deploy, alteração de regras de negócio, novas rotas funcionais ou liberação de `REAL`.
+
+### 14.2 Contrato real que deve ser representado
+
+O código confirma:
+
+- Fastify 5 (`^5.12.8`), JavaScript ESM puro, sem TypeScript.
+- Rotas registradas em `apps/api/src/app.js`; `/health` inline e os módulos sob `/trips` e `/monitoring`, sem prefixo de versão.
+- Schemas de request existentes: body de criação/atualização de viagem; `params.id` e `params.tripId`; querystrings vazias em `analysis`, `opportunities` e `POST /monitoring/runs`; `limit` 1–100 em `GET /monitoring/runs`; body `object|null` com `maxProperties: 0` no POST de monitoramento.
+- **Não há response schemas** nas rotas. As respostas vêm dos services e estão comprovadas pelos testes `app.inject()`.
+- Erros de domínio usam `HttpError(statusCode, message)` e o handler padrão do Fastify; o corpo de erro é `statusCode`, `error`, `message` (com `code` e `validation` quando o Fastify os produz). Não há handler central customizado.
+- **Não há autenticação.** Portanto não se deve inventar `securitySchemes` nem exigir token no Swagger UI; o documento deve declarar ausência de segurança e a rota deve ser protegida por ambiente.
+- Dados simulados são explícitos (`simulated`, `dataClassification: SIMULATED`, contagens e limitações); o contrato não pode apresentá-los como preços reais.
+
+### 14.3 Dependências e compatibilidade
+
+| Pacote | Versão planejada | Justificativa |
+|---|---|---|
+| `@fastify/swagger` | `9.9.4` (linha `^9.x`) | Compatibilidade oficial com Fastify `^5.x`; suporta `openapi: '3.1.0'` e geração dinâmica a partir dos schemas. |
+| `@fastify/swagger-ui` | `5.2.6` (linha `^5.x`) | É a linha listada oficialmente para Fastify 5 + swagger 9. O npm publica `6.1.4`, mas a tabela do projeto ainda não declara a 6.x para Fastify 5; não usar sem validação explícita. |
+| `@readme/openapi-parser` | `10.0.0` (dev) | Valida OpenAPI 3.1, mantém API de `validate()` e declara Node `>=20`, compatível com o mínimo do projeto. Alternativa a `@apidevtools/swagger-parser`, cuja linha atual exige Node mais novo. |
+
+Nenhuma dependência de runtime além dos dois plugins. Nenhuma migration. O `package-lock.json` deve ser atualizado na implementação; nada é instalado nesta fase de planejamento.
+
+### 14.4 Estratégia de geração e prevenção de divergência
+
+1. Registrar `@fastify/swagger` antes das rotas, em modo dinâmico, com `openapi: { openapi: '3.1.0', info: { title, version, description }, tags, servers: [] }` e `components` compartilhados. Não manter um `openapi.json` estático paralelo.
+2. Adicionar metadados de operação nas rotas: `operationId` único, `tags`, `summary`, `description` e `schema.response` por código HTTP. O `schema.response` passa a ser a fonte única do contrato de saída e também o serializer do Fastify; por isso cada schema deve conter **todos** os campos que os services realmente devolvem, incluindo `null` quando aplicável.
+3. Definir componentes reutilizáveis: `Trip`, `FlightOffer`, `PriceObservation`, `PriceSnapshot`, `AnalysisEnvelope`, `OpportunitiesEnvelope`, `MonitoringRun`, `MonitoringItem`, `ErrorResponse`, `ValidationError` e variantes de item. Usar `$ref` para evitar duplicação.
+4. Declarar erros por operação com o schema padrão do Fastify. `400` cobre validação de schema e regras de UUID/data; `404` cobre viagem inexistente; `409` cobre imutabilidade de rota/período, ausência de origem, configuração divergente durante pesquisa e concorrência de monitoramento; `503` cobre a barreira `REAL`; `500` permanece como fallback não enumerado quando aplicável. Não prometer códigos que o código não produz.
+5. Usar exemplos derivados de fixtures/testes existentes, marcando explicitamente dados `SIMULATED`. Exemplos não podem introduzir propriedades fora dos schemas.
+6. Declarar `security: []` (ou ausência de requisito) e documentar que a API não possui autenticação nesta fase. Quando auth existir, o esquema será adicionado em etapa própria.
+7. Validar a coerência em teste: o documento gerado deve conter exatamente os paths/operações montados; nenhuma operação documentada sem handler e nenhum handler relevante sem operação. O teste de contrato roda sem banco, via `app.swagger()`/`app.inject()`.
+
+**Risco central:** adicionar `schema.response` altera a serialização do Fastify. A implementação deve rodar a suíte existente e comparar os corpos; se um campo legítimo for removido, o schema está incompleto e deve ser corrigido — nunca relaxar o teste ou esconder a diferença.
+
+### 14.5 Cobertura mínima por endpoint
+
+| Método | Rota | Sucesso | Erros a documentar |
+|---|---|---|---|
+| `GET` | `/health` | `200` | — |
+| `POST` | `/trips` | `201` | `400` |
+| `GET` | `/trips` | `200` | — |
+| `GET` | `/trips/:id` | `200` | `400`, `404` |
+| `PUT` | `/trips/:id` | `200` | `400`, `404`, `409` |
+| `DELETE` | `/trips/:id` | `204` | `400`, `404` |
+| `GET` | `/trips/:tripId/flights` | `200` | `400`, `404`, `409`, `503` |
+| `GET` | `/trips/:tripId/offers/history` | `200` | `400`, `404` |
+| `GET` | `/trips/:tripId/analysis` | `200` | `400`, `404` |
+| `GET` | `/trips/:tripId/opportunities` | `200` | `400`, `404` |
+| `POST` | `/monitoring/runs` | `200` | `400`, `409`, `500` |
+| `GET` | `/monitoring/runs` | `200` | `400` |
+
+Além dos paths funcionais, a UI expõe `/documentation` e `/documentation/json` quando habilitada; esses paths não fazem parte do contrato de negócio e não devem ser contados como endpoints de domínio.
+
+### 14.6 Rota, ambientes e segurança
+
+- Criar uma configuração explícita `API_DOCS_ENABLED` (boolean estrito, padrão **`false`**), carregada por `config/env.js` com o mesmo padrão D2/D4 já usado no projeto: valor não reconhecido desativa e emite `warn`; `true`/`1` habilitam.
+- `buildApp()` deve receber a opção de forma injetável (ex.: `buildApp({ docsEnabled = false } = {})`) para que testes não dependam de ambiente global. `server.js` passa `loadEnv().apiDocs.enabled`; `buildApp()` sozinho continua sem docs, preservando os testes existentes.
+- Quando habilitada: `GET /documentation` (UI) e `GET /documentation/json` (documento). Quando desabilitada: os paths respondem `404`, sem registrar o plugin.
+- A UI usa os assets locais de `@fastify/swagger-ui`; não usar CDN. Aplicar `staticCSP: true` e uma CSP compatível com o Swagger UI, sem `unsafe-eval` desnecessário; revisar os headers antes de habilitar em ambiente público.
+- Não incluir `servers` com host interno, URLs de banco, chaves, tokens, credenciais ou variáveis de ambiente. `API_DOCS_ENABLED` não é segredo, mas a documentação não deve revelar a topologia interna.
+- Como não há auth, produção deve manter `API_DOCS_ENABLED=false` por padrão. Habilitar publicamente é uma decisão operacional explícita; a rota não deve ser confundida com proteção de acesso.
+
+### 14.7 Estratégia de testes
+
+Criar `tests/openapi.test.js` (ou equivalente), sem banco:
+
+1. Construir a app com `docsEnabled: true`, aguardar `ready()` e obter `app.swagger()`.
+2. Validar o documento com `@readme/openapi-parser` (`validate`), garantindo `openapi === '3.1.0'` e `info`/paths bem formados.
+3. Comparar o conjunto de paths/operações com uma lista canônica dos 12 endpoints; falhar em path ausente, extra ou método trocado.
+4. Verificar que cada operação tem `operationId` único, `tags`, `summary`, request schema quando aplicável, response schema para o sucesso e respostas de erro compatíveis com o comportamento real.
+5. Verificar `components.schemas` referenciados e a presença de `ErrorResponse`; garantir que nenhum exemplo contenha campo não declarado.
+6. Com `docsEnabled: false`, garantir `404` em `/documentation` e `/documentation/json`; com `true`, garantir `200` e `content-type` correto para HTML/JSON.
+7. Rodar a suíte existente (`npm test`) para provar que a serialização por response schema não alterou nenhum contrato. Os testes de API já cobrem os corpos reais; não criar um segundo conjunto de fixtures divergente.
+8. Opcional e somente se necessário: validar exemplos com o Ajv do próprio Fastify, sem abrir conexão com o banco.
+
+### 14.8 Arquivos potencialmente envolvidos
+
+- `package.json` / `package-lock.json` — duas dependências de runtime e uma dev.
+- `apps/api/src/app.js` — registro condicional dos plugins e opção `docsEnabled`.
+- `apps/api/src/config/env.js` — `API_DOCS_ENABLED` estrito.
+- `apps/api/src/server.js` — passar a configuração ao `buildApp()`.
+- `apps/api/src/modules/*/*.routes.js` — metadados e `schema.response`/erros por operação.
+- `apps/api/src/openapi/` (novo, se necessário) — componentes compartilhados e helpers de resposta, sem lógica de negócio.
+- `tests/openapi.test.js` (novo) — validade, cobertura e gate da rota.
+- `.env.example` — `API_DOCS_ENABLED=true` apenas como conveniência local, com comentário de que produção usa `false`.
+- `README.md` — seção curta de documentação e instrução de acesso, na implementação.
+
+Não alterar `prisma/schema.prisma`, migrations, services de domínio, barreira `REAL`, `normalize.js` ou contratos de provedores.
+
+### 14.9 Critérios objetivos de conclusão
+
+- `@fastify/swagger` e `@fastify/swagger-ui` instalados nas versões compatíveis e `npm ci` reproduzível.
+- Documento OpenAPI 3.1.0 válido, com os 12 endpoints e todos os códigos de sucesso/erro acordados.
+- Responses cobrem integralmente os corpos reais; suíte existente continua verde sem relaxar assertions.
+- `GET /documentation` e `/documentation/json` funcionam quando habilitados e retornam `404` quando desabilitados.
+- Nenhum segredo/host interno no documento ou nos assets; CSP revisada.
+- Teste de contrato verde e executado no CI.
+- README e relatório atualizados apenas com o comportamento efetivamente implementado.
+
+### 14.10 Riscos técnicos e mitigação
+
+| Risco | Mitigação |
+|---|---|
+| Response schema alterar serialização e remover campos | Escrever schemas completos; rodar suíte existente; comparar corpos reais; corrigir schema, nunca o teste. |
+| Divergência entre OpenAPI e handlers | Geração dinâmica + teste que compara paths/operações com a lista canônica; code review. |
+| OpenAPI 3.1 vs. JSON Schema do Fastify | Usar `type: ['string','null']` quando necessário; validar com parser 3.1; evitar `nullable` exclusivo de 3.0. |
+| Exposição pública da documentação | `API_DOCS_ENABLED=false` por padrão; CSP; ausência de hosts/segredos; decisão explícita para habilitar. |
+| UI 6.x incompatível ou não suportada | Fixar a linha 5.2.6 documentada para Fastify 5; não atualizar para 6.x sem validação. |
+| Exemplos virarem “promessas” de dados | Derivar de fixtures/testes; rotular `SIMULATED`; não inventar propriedades ou resultados. |
+| Auth futura | Não simular segurança agora; adicionar `securitySchemes` somente quando houver implementação real. |
+
+### 14.11 Fora do escopo (permanece)
+
+- Liberação do provider `REAL`, remoção da barreira `503`, validação paga da SerpApi e decisão comercial/legal.
+- Autenticação, autorização, multiusuário, rate limit, CORS, TLS e deploy.
+- Novas regras de negócio, novos endpoints, migrations, cache, SDK, geração de clientes ou versionamento de API.
+- Substituir os testes existentes por testes de contrato ou alterar fixtures para fazer o documento passar.
+
+### 14.12 Próximo checkpoint
+
+Aguardar revisão e autorização explícita do usuário. A implementação só começa depois disso, em etapa separada, com instalação das dependências, alterações de código, testes e commit/push somente se autorizados. Até lá, o estado permanece: `main == origin/main == 6abba27`, árvore limpa, D3 publicado, Fase 4 apenas planejada.
+
+> **Checkpoint cumprido em 16/11/2026.** A implementação foi executada no working tree e validada; o registro efetivo, os números de teste e o estado Git estão no §14.13. Este §14.12 permanece como registro do planejamento original.
+
+### 14.13 Implementação efetiva (16/11/2026)
+
+> Este registro preserva o estado original da implementação. Após a auditoria independente, os schemas foram fechados e a CSP foi restringida; os números e o estado atuais estão em **§14.14**. Onde este subseção cita `additionalProperties: true`, 42 componentes, 9/9 ou 332/332, trata-se do estado anterior à correção.
+
+**Escopo entregue no working tree, sem commit/push:**
+
+- `package.json` / `package-lock.json`: `@fastify/swagger@9.9.4` e `@fastify/swagger-ui@5.2.6` em `dependencies`; `@readme/openapi-parser@10.0.0` em `devDependencies`. Versões explícitas, sem faixa flutuante.
+- `apps/api/src/openapi/schemas.js` (novo): componentes JSON Schema compartilhados e registro via `app.addSchema`, cobrindo `HealthResponse`, `Trip`, ofertas de voo, histórico, análise, oportunidades, monitoramento e erros. Os schemas também são os serializers Fastify; `additionalProperties: true` foi mantido deliberadamente para não remover campos futuros/adicionais, e os campos opcionais reais (`ErrorResponse.code`, `validation`, `validationContext`, `RelatedQuery.priceInsights`) não são obrigatórios.
+- `apps/api/src/app.js`: `buildApp({ docsEnabled = false } = {})`; registro condicional de `@fastify/swagger`/`@fastify/swagger-ui`; 12 operações com `operationId` único, tags, summaries, descriptions, parâmetros, request/response schemas e códigos HTTP reais; `servers: []`; componentes nomeados; `refResolver` que usa o `title`/`$id` em vez de `def-N`; transformação de `/trips/` para `/trips`; descrições e exemplos de resposta anexados no `transformObject`.
+- `/health` foi movido para um plugin registrado após o Swagger: uma rota adicionada diretamente no root antes de o plugin carregar não era capturada pelo hook `onRoute`.
+- `apps/api/src/config/env.js`: `API_DOCS_ENABLED` estrito (ausente/`false`/`0`/`off`/`no`/vazio desligam; `true`/`1` ligam; valor não reconhecido desliga com `warn`). `server.js` repassa `env.apiDocs.enabled`; `buildApp()` sozinho permanece sem docs, preservando testes e bootstrap.
+- `apps/api/src/modules/*/*.routes.js`: metadados e response schemas em todas as rotas, sem alterar regras de negócio. Em `POST /monitoring/runs`, o body vazio usa `anyOf` (`object` com `maxProperties: 0` ou `null`) e a querystring vazia declara `properties: {}`; isso evita parâmetros de query inválidos gerados pelo `@fastify/swagger` sem mudar a validação do Fastify.
+- `.env.example`: `API_DOCS_ENABLED=false` documentado.
+- `README.md`, `docs/contexto.md` e este relatório atualizados com URLs, ativação, comportamento por ambiente, cobertura e limitações.
+
+**Comportamento em runtime:**
+
+- `docsEnabled: false` (default e bootstrap sem flag): `/documentation`, `/documentation/json` e assets respondem `404`; plugins não são registrados.
+- `docsEnabled: true`: `/documentation` serve HTML do Swagger UI com assets locais e `staticCSP`; `/documentation/json` serve o documento 3.1.0.
+- O documento não inclui autenticação simulada, `servers` com hosts internos, `DATABASE_URL`, `TEST_DATABASE_URL`, `SERPAPI_API_KEY`, `api_key`, `localhost`, `127.0.0.1` ou URLs `http(s)`.
+- As 12 operações documentadas são: `GET /health`; `POST/GET /trips`; `GET/PUT/DELETE /trips/{id}`; `GET /trips/{tripId}/flights`; `GET /trips/{tripId}/offers/history`; `GET /trips/{tripId}/analysis`; `GET /trips/{tripId}/opportunities`; `POST/GET /monitoring/runs`.
+
+**Correções encontradas durante a validação:**
+
+1. `ErrorResponse` inicialmente exigia `code`/`validation` em todos os erros, fazendo o serializer do Fastify transformar um `400` de domínio em `500`; os campos opcionais foram corrigidos no schema, não nos testes.
+2. `RelatedQuery` exigia `priceInsights`, que não existe em toda oferta; passou a ser opcional.
+3. O Swagger gerava `/trips/` em vez de `/trips`; a transformação preserva o path realmente usado pela API.
+4. Componentes saíam como `def-N`; o `refResolver` passou a publicar os nomes lógicos.
+5. `POST /monitoring/runs` gerava parâmetros de query inválidos a partir do body/querystring vazios; `anyOf` + `properties: {}` corrigiram o documento sem alterar o comportamento validado.
+6. O `/health` não aparecia no documento quando registrado antes do plugin; foi movido para um plugin posterior ao Swagger.
+
+**Verificação executada:**
+
+- `tests/openapi.test.js`: **9/9**.
+- Recorte HTTP existente (`api`, `offers-history`, `analysis-endpoint`, `opportunities-endpoint`, `monitoring-endpoint`): **52/52**.
+- Suíte completa: **332/332** em **10,4 s**, exit 0, após a criação do banco descartável `trippulse_test_migration` em `127.0.0.1:5544`; a aplicação usou `localhost:5433`.
+- `git diff --check`: limpo (exit 0; somente avisos de normalização LF/CRLF do Git no Windows).
+- Documento inspecionado em runtime: `openapi: 3.1.0`, 8 paths / 12 operações, 42 componentes, `/documentation` 200 `text/html` e `/documentation/json` 200 `application/json`.
+
+**Limitações e estado:**
+
+- Nenhuma inspeção visual da UI em navegador foi feita; a validação foi por `app.inject()` (HTML, CSP, JSON e conteúdo).
+- Nenhum commit, staging, push, amend, rebase ou reset foi executado. HEAD permanece `6abba27d15f6500f8d3aa12b0f7479b6d3161137`; a árvore contém as alterações da Fase 4, `docs/contexto.md` e este relatório, além dos arquivos não rastreados `apps/api/src/openapi/schemas.js` e `tests/openapi.test.js`.
+- Nenhuma alteração em `prisma/schema.prisma`, migrations, `normalize.js`, barreira `REAL`, D5/D6/D7, regras de negócio ou chamadas à SerpApi.
+
+### 14.14 Correção pós-auditoria independente (A1–A4, 16/11/2026)
+
+A auditoria independente do D4 emitiu **NÃO APROVADO**, com bloqueio em **A1**: o helper `object()` aplicava `additionalProperties: true` a 41 dos 42 componentes, e o próprio comentário o justificava como proteção genérica contra perda de campos. A correção foi aplicada no working tree, sem commit/push.
+
+**A1 — schemas fechados, componente a componente:**
+
+- `object()` agora gera `additionalProperties: false`; campos públicos precisam ser declarados.
+- Os únicos mapas dinâmicos remanescentes são `CurrencyFloors` (`additionalProperties: { type: 'integer' }`, mapa moeda → inteiro) e `ValidationIssue.params` (parâmetros variáveis de palavra-chave do Ajv, com `additionalProperties: true` local e documentado).
+- `Trip`, `Money`, `FlightRoute`, `AnalysisEnvelope`, `OpportunitiesEnvelope`, `MonitoringRun` e os demais componentes de resposta foram fechados sem remover campos reais.
+- O contrato agora tem **45 componentes** (42 anteriores − `ValidationError` + `MonitoringItemOk` + `MonitoringItemFailed` + `MonitoringItemSkipped` + `ValidationIssue`).
+
+**MonitoringItem — três variantes explícitas:**
+
+| Variante | Campos obrigatórios | Campos opcionais |
+|---|---|---|
+| `OK` | `tripId`, `status` | `opportunityCount`, `evaluatedOfferCount`, `containsSimulatedData` |
+| `FAILED` | `tripId`, `status`, `stage`, `error`, as três contagens/flag | — |
+| `SKIPPED` | `tripId`, `status`, `reason`, `detail`, as três contagens/flag | — |
+
+As contagens de `OK` continuam opcionais para preservar itens históricos gravados antes do contrato atual (fixtures usam `{ tripId, status: 'OK' }`). `MonitoringItem` é `oneOf` das três variantes fechadas. A leitura do JSONB em `monitoring.service.js` valida tipo, status, chaves permitidas, campos obrigatórios, enums e tipos antes de `toRunView()`; propriedade desconhecida falha com 500 controlado e não é ecoada na resposta.
+
+**RelatedQuery.priceInsights:**
+
+- Deixou de ser objeto arbitrário. Declara somente `lowest_price`, `price_level`, `typical_price_range` e `price_history`, todos opcionais, com `additionalProperties: false`.
+- `normalize.js` continua copiando o metadado para `relatedQuery.priceInsights`; o serializer da API passa a descartar qualquer campo externo não previsto, reduzindo a superfície de exposição de payload do provedor.
+
+**ErrorResponse / validation.items:**
+
+- Criado `ValidationIssue` fechado com `instancePath`, `schemaPath`, `keyword`, `params` e `message`, todos opcionais.
+- `params` mantém `additionalProperties: true` porque suas chaves variam por palavra-chave do Ajv (`missingProperty`, `limit`, `type`, `additionalProperty`, etc.); é a única permissividade de objeto no contrato.
+- `ErrorResponse.validation` referencia `ValidationIssue`; `code` e `validationContext` continuam opcionais.
+
+**A2:** o componente duplicado `ValidationError` foi removido; `ErrorResponse` é a única definição de erro.
+
+**A3:** a UI passou a usar CSP explícita, restrita a assets locais:
+
+```text
+default-src 'self'; base-uri 'self'; font-src 'self' data:; frame-ancestors 'self';
+img-src 'self' data:; object-src 'none'; script-src 'self'; script-src-attr 'none';
+style-src 'self'; upgrade-insecure-requests;
+```
+
+`https:` foi removido de `style-src`; `validator.swagger.io` foi removido de `img-src` e `validatorUrl: false` desabilita o validador externo do Swagger UI. O inicializador é servido localmente.
+
+**A4:** o JSDoc de `buildApp` foi movido para imediatamente acima da função; `healthRoutes` ficou sem o bloco incorreto.
+
+**Comparação antes/depois:**
+
+| Ponto | Antes | Depois |
+|---|---|---|
+| `additionalProperties: true` | 41/42 componentes de topo + aninhados | Somente `ValidationIssue.params`; `CurrencyFloors` é mapa tipado |
+| `MonitoringItem` | Objeto único permissivo | `oneOf` de `OK`/`FAILED`/`SKIPPED`, fechados e validados na leitura |
+| `priceInsights` | Objeto arbitrário | Quatro campos conhecidos, fechado |
+| `validation.items` | Objeto arbitrário | `ValidationIssue` com cinco campos, `params` dinâmico |
+| `ValidationError` | Duplicado e não referenciado | Removido |
+| CSP | `style-src 'self' https:` e `validator.swagger.io` | Somente `'self'`/`data:`; validador externo desligado |
+| JSDoc de `buildApp` | Sobre `healthRoutes` | Sobre `buildApp` |
+
+**Testes executados:**
+
+- `tests/openapi.test.js`: **12/12**; inclui schemas fechados, única permissividade em `params`, `CurrencyFloors`, três variantes, `priceInsights`, `ValidationIssue`, ausência de `ValidationError`, CSP local e `validatorUrl: null`.
+- `tests/monitoring-endpoint.test.js`: **11/11**; inclui rejeição de item JSONB com campo desconhecido (500) e preservação das três variantes legítimas.
+- Recorte focado (`monitoring-core`, `monitoring-endpoint`, `normalize`, `real-barrier-policy`, `flight-providers-registry`): **53/53**.
+- Suíte completa: **336/336**, 0 falhas, 0 skipped, 0 cancelados, exit 0, em PostgreSQL 17 descartável (`127.0.0.1:5545`); banco descartável removido ao final.
+- Validação OpenAPI 3.1 do documento gerado: `valid: true`, sem warnings; 8 paths, 12 operações e 45 componentes; exemplos de resposta validados com Ajv sem falhas.
+
+**Estado e limites:** HEAD permanece `6abba27d15f6500f8d3aa12b0f7479b6d3161137`; nada staged/commitado/pushado. Nenhuma alteração em Prisma, migrations, regras de negócio, contratos de provedores, D5/D6/D7, barreira `REAL` ou semântica de preços. Nenhuma chamada real à SerpApi e `REAL` continua bloqueado. Não houve inspeção visual em navegador; a UI foi validada por `app.inject()` (HTML, CSP, assets locais, inicializador e JSON). **Este registro não declara aprovação independente; o D4 aguarda nova auditoria.**

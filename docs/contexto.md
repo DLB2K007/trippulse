@@ -189,7 +189,7 @@ Primeiro, analise os requisitos e apresente um plano de implementação. Depois,
 | 2 | CRUD de viagens e testes automatizados | ✅ Concluída |
 | 3 | Ofertas, histórico, análise, oportunidades e monitoramento | ✅ Concluída e publicada |
 | 4 | **OpenAPI 3.1 + Swagger UI** | ✅ Concluída, corrigida e publicada em `a68bf73`; CI #14 success |
-| 5 | Preparação para integração real (SerpApi/Google Flights: validação, preço, custos, jurídico e segurança) | 🟡 Planejamento concluído em 16/11/2026; `REAL` continua bloqueado |
+| 5 | Preparação para integração real (SerpApi/Google Flights: validação, preço, custos, jurídico e segurança) | 🟡 Planejamento concluído em 16/11/2026; `REAL` continua bloqueado; primeira melhoria técnica (testes de regressão do `booking_token`) publicada em `81d5bb3` |
 | 5.1 | Liberação do provider `REAL` (decisão explícita após todos os critérios da Fase 5) | ⛔ Bloqueada |
 | 6 | Publicação da API (empacotamento, ambiente, TLS, CORS, rate limit) | ⏳ Pendente |
 
@@ -234,8 +234,9 @@ O detalhamento operacional, riscos, decisões e a correção estão no **§14 de
 
 ### 12.1 Estado de referência
 
-- Código de referência: `main == origin/main == a68bf73eb001bc9d70484186a4b98a4a53b82334`.
+- Código de referência: `main == origin/main == 81d5bb3e8a30e8e7559f60354863adcdef5a51c2` (testes de regressão do `booking_token`, publicados em 20/11/2026; CI #16 success). A Fase 4 está em `a68bf73` e o planejamento da Fase 5 em `9c2fe22`.
 - Fase 4 publicada; CI #14 (`43884861309`) concluída com `success`.
+- A cobertura do `booking_token` publicada em `81d5bb3` é de **fronteiras**, não ponta a ponta: adaptador/normalização com fixtures sintéticas e `fetch` injetado, endpoint HTTP com dados simulados (nenhuma oferta `REAL` exposta), `persistOfferSnapshot` com oferta sintética persistível e o fluxo real de monitoramento em PostgreSQL com provider sintético para o JSONB. Nenhuma busca SerpApi `REAL` foi executada (a barreira segue bloqueando) e a incompatibilidade `baggagePieces`/`refundable` do mapeador SerpApi permanece um bloqueador separado para persistir oferta normalizada por esse mapeador.
 - O adaptador `serpapi` existe e é testado apenas com `fetch` injetado e fixtures **sintéticas**.
 - Nenhuma oferta `REAL` é exposta ou persistida: a barreira bloqueia o registro de providers antes da chamada externa e há defesa pós-normalização e na persistência.
 
@@ -348,7 +349,7 @@ O caso **Google LLC v. SerpApi LLC** é sobre Google Search/SearchGuard e DMCA, 
 
 #### 12.6.1 LGPD — análise preliminar (não é parecer jurídico)
 
-**Fluxo e categorias de dados.** O TripPulse recebe dados da viagem (origem, destino, datas e nome da viagem), que podem ser pessoais ou vinculados a uma pessoa; hoje não há autenticação, então a titularidade ainda não está individualizada. O adaptador envia à SerpApi apenas a consulta de voo (aeroportos, datas, moeda, locale e classe), não nome, e-mail, documento ou dados de pagamento. A SerpApi pode processar IP, metadados de requisição e resultados; o TripPulse persiste ofertas, histórico de preços e itens de monitoramento. A oferta normalizada não tem campo de token e o `booking_token` não é transportado para ela pelo fluxo atual, mas a ausência no raw/persistência ainda carece de teste específico de regressão. A chave da API é segredo de serviço, não dado pessoal do usuário.
+**Fluxo e categorias de dados.** O TripPulse recebe dados da viagem (origem, destino, datas e nome da viagem), que podem ser pessoais ou vinculados a uma pessoa; hoje não há autenticação, então a titularidade ainda não está individualizada. O adaptador envia à SerpApi apenas a consulta de voo (aeroportos, datas, moeda, locale e classe), não nome, e-mail, documento ou dados de pagamento. A SerpApi pode processar IP, metadados de requisição e resultados; o TripPulse persiste ofertas, histórico de preços e itens de monitoramento. A oferta normalizada não tem campo de token e o `booking_token` não é transportado para ela pelo fluxo atual, e a ausência nos destinos sensíveis (requisições, oferta normalizada, resposta HTTP, histórico e JSONB de monitoramento) tem cobertura de regressão por **testes de fronteira** desde 20/11/2026 (`tests/booking-token*.test.js`, 8 testes, `81d5bb3`) — adaptador/normalização com fixtures e `fetch` injetado, endpoint com dados simulados, persistência com oferta sintética e JSONB via monitoramento real com provider sintético —, não um teste ponta a ponta: nenhuma busca SerpApi `REAL` foi executada e a persistência de oferta do mapeador SerpApi segue bloqueada por `baggagePieces`/`refundable` nulos, bloqueador separado do token. A chave da API é segredo de serviço, não dado pessoal do usuário.
 
 **Papéis dos agentes.** Em análise preliminar: TripPulse como controladora dos dados das viagens e do histórico; SerpApi como operadora/subprocessadora para a consulta e o parsing; Google Flights e demais fornecedores como terceiros/subprocessadores da SerpApi; provedores de hospedagem, banco e observabilidade como subprocessadores do TripPulse. Os papéis definitivos dependem do contrato, do DPA e da arquitetura de autenticação futura.
 
@@ -369,7 +370,7 @@ O caso **Google LLC v. SerpApi LLC** é sobre Google Search/SearchGuard e DMCA, 
 | Chave só no backend | ✅ | closure do adaptador; `SERPAPI_API_KEY` não versionada |
 | Chave em logs/erros | 🟡 | erros do adaptador sanitizados; falta teste integrado de logs e redaction explícita |
 | `departure_token` | ✅ | usado só na 2ª requisição; removido por cópia dos raw offers; testes cobrem `outbound`, `return` e normalizado |
-| `booking_token` | 🟡 | nunca enviado pelo adaptador; **não é removido do raw `return`**; não é transportado para a oferta normalizada pelo fluxo atual; falta teste específico de regressão para ausência no raw/persistência |
+| `booking_token` | 🟡 | nunca enviado pelo adaptador; **permanece em `raw.outbound`/`raw.return`** (fixado por teste); não é transportado para a oferta normalizada, resposta HTTP, histórico ou JSONB — ausência coberta por 8 testes **de fronteira** (`tests/booking-token*.test.js`, `81d5bb3`), sem busca `REAL` ponta a ponta; falta o teste integrado de logs/redaction |
 | Barreira `REAL` | ✅ | pré-provider, pós-normalização e persistência |
 | Timeout | 🟡 | 30 s por requisição; sem orçamento total do ciclo |
 | Retry/backoff | ❌ | falha aborta a viagem; sem retry/backoff/jitter |
